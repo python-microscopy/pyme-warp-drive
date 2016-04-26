@@ -3,10 +3,10 @@ import pycuda.autoinit  # noqa
 import pycuda.tools
 import numpy as np
 from detector_cu import *
-import matplotlib.pyplot as plt
-from matplotlib import cm
-import time
-import scipy.io
+#import matplotlib.pyplot as plt
+#from matplotlib import cm
+#import time
+#import scipy.io
 
 
 

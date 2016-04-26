@@ -1,0 +1,164 @@
+﻿Build started 4/22/2016 4:24:01 PM.
+     1>Project "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\sCMOS_MLE.vcxproj" on node 2 (rebuild target(s)).
+     1>_PrepareForClean:
+         Deleting file "x64\Release\sCMOS_MLE.lastbuildstate".
+       CudaClean:
+         cmd.exe /C "C:\Users\Yiming\AppData\Local\Temp\tmp66c762a235ed4e9095c238896e646d05.cmd"
+         "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin\nvcc.exe" -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include"    --keep-dir "x64\Release" -maxrregcount=0 --ptxas-options=-v --machine 64 --compile      -Xcompiler "/EHsc /nologo /O2 /Zi  /MD  " -o "x64\Release\GPUgaussMLEv2_db_yl.cu.obj" "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\GPUgaussMLEv2_db_yl.cu" -clean
+         
+         D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin\nvcc.exe" -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include"    --keep-dir "x64\Release" -maxrregcount=0 --ptxas-options=-v --machine 64 --compile      -Xcompiler "/EHsc /nologo /O2 /Zi  /MD  " -o "x64\Release\GPUgaussMLEv2_db_yl.cu.obj" "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\GPUgaussMLEv2_db_yl.cu" -clean 
+         Deleting file "x64\Release\GPUgaussMLEv2_db_yl.cu.deps".
+       CudaClean:
+         cmd.exe /C "C:\Users\Yiming\AppData\Local\Temp\tmp3461656ea5c442c09cd68fbf4d069dab.cmd"
+         "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin\nvcc.exe" -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include"    --keep-dir "x64\Release" -maxrregcount=0 --ptxas-options=-v --machine 64 --compile      -Xcompiler "/EHsc /nologo /O2 /Zi  /MD  " -o "x64\Release\wrapper_db.cu.obj" "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\wrapper_db.cu" -clean
+         
+         D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin\nvcc.exe" -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include"    --keep-dir "x64\Release" -maxrregcount=0 --ptxas-options=-v --machine 64 --compile      -Xcompiler "/EHsc /nologo /O2 /Zi  /MD  " -o "x64\Release\wrapper_db.cu.obj" "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\wrapper_db.cu" -clean 
+         Deleting file "x64\Release\wrapper_db.cu.deps".
+       InitializeBuildStatus:
+         Creating "x64\Release\sCMOS_MLE.unsuccessfulbuild" because "AlwaysCreate" was specified.
+       AddCudaCompileDeps:
+         C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64\cl.exe /E /nologo /showIncludes /TP /D__CUDACC__ /I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin" /I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include" /I. /FIcuda_runtime.h /c "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\GPUgaussMLEv2_db_yl.cu" 
+       AddCudaCompileDeps:
+         C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64\cl.exe /E /nologo /showIncludes /TP /D__CUDACC__ /I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin" /I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include" /I. /FIcuda_runtime.h /c "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\wrapper_db.cu" 
+       CudaBuild:
+         Compiling CUDA source file GPUgaussMLEv2_db_yl.cu...
+         cmd.exe /C "C:\Users\Yiming\AppData\Local\Temp\tmp9df13d60a7b1431998c3cef43cb5797d.cmd"
+         "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin\nvcc.exe" -gencode=arch=compute_20,code=\"sm_20,compute_20\" -gencode=arch=compute_30,code=\"sm_30,compute_30\" --use-local-env --cl-version 2010 -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include"    --keep-dir "x64\Release" -maxrregcount=0 --ptxas-options=-v --machine 64 --compile      -Xcompiler "/EHsc /nologo /O2 /Zi  /MD  " -o "x64\Release\GPUgaussMLEv2_db_yl.cu.obj" "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\GPUgaussMLEv2_db_yl.cu"
+         
+         D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin\nvcc.exe" -gencode=arch=compute_20,code=\"sm_20,compute_20\" -gencode=arch=compute_30,code=\"sm_30,compute_30\" --use-local-env --cl-version 2010 -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include"    --keep-dir "x64\Release" -maxrregcount=0 --ptxas-options=-v --machine 64 --compile      -Xcompiler "/EHsc /nologo /O2 /Zi  /MD  " -o "x64\Release\GPUgaussMLEv2_db_yl.cu.obj" "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\GPUgaussMLEv2_db_yl.cu" 
+         GPUgaussMLEv2_db_yl.cu
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(934): warning : variable "gamma" was declared but never referenced
+         
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(1683): warning : variable "s_varim" was set but never used
+         
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(1684): warning : variable "s_gainim" was set but never used
+         
+         tmpxft_000004a0_00000000-3_GPUgaussMLEv2_db_yl.compute_30.cudafe1.gpu
+         tmpxft_000004a0_00000000-7_GPUgaussMLEv2_db_yl.compute_30.cudafe2.gpu
+         GPUgaussMLEv2_db_yl.cu
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(934): warning : variable "gamma" was declared but never referenced
+         
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(1683): warning : variable "s_varim" was set but never used
+         
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(1684): warning : variable "s_gainim" was set but never used
+         
+         tmpxft_000004a0_00000000-0_GPUgaussMLEv2_db_yl.compute_20.cudafe1.gpu
+         tmpxft_000004a0_00000000-11_GPUgaussMLEv2_db_yl.compute_20.cudafe2.gpu
+         GPUgaussMLEv2_db_yl.cu
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(934): warning : variable "gamma" was declared but never referenced
+         
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(1683): warning : variable "s_varim" was set but never used
+         
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(1684): warning : variable "s_gainim" was set but never used
+         
+         ptxas info    : Compiling entry function '_Z13kernel_MLEFitPffiiS_S_S_iS_S_' for 'sm_30'
+         ptxas info    : Function properties for _Z13kernel_MLEFitPffiiS_S_S_iS_S_
+             312 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+         ptxas info    : Used 52 registers, 15600+0 bytes smem, 392 bytes cmem[0], 116 bytes cmem[2]
+         ptxas info    : Compiling entry function '_Z31kernel_MLEFit_pix_threads_sigmaPffiiS_S_S_iS_S_i' for 'sm_30'
+         ptxas info    : Function properties for _Z31kernel_MLEFit_pix_threads_sigmaPffiiS_S_S_iS_S_i
+             400 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+         ptxas info    : Used 43 registers, 4180+0 bytes smem, 396 bytes cmem[0], 156 bytes cmem[2]
+         ptxas info    : Compiling entry function '_Z15kernel_MLEFit_zPfffffffffiiS_S_S_iS_S_' for 'sm_30'
+         ptxas info    : Function properties for _Z15kernel_MLEFit_zPfffffffffiiS_S_S_iS_S_
+             528 bytes stack frame, 144 bytes spill stores, 140 bytes spill loads
+         ptxas info    : Used 63 registers, 15600+0 bytes smem, 416 bytes cmem[0], 128 bytes cmem[2]
+         ptxas info    : Compiling entry function '_Z31kernel_MLEFit_pix_threads_astigPffiiS_S_S_iS_S_i' for 'sm_30'
+         ptxas info    : Function properties for _Z31kernel_MLEFit_pix_threads_astigPffiiS_S_S_iS_S_i
+             472 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+         ptxas info    : Used 40 registers, 4196+0 bytes smem, 396 bytes cmem[0], 156 bytes cmem[2]
+         ptxas info    : Compiling entry function '_Z21kernel_MLEFit_sigmaxyPffiiS_S_S_iS_S_' for 'sm_30'
+         ptxas info    : Function properties for _Z21kernel_MLEFit_sigmaxyPffiiS_S_S_iS_S_
+             544 bytes stack frame, 36 bytes spill stores, 32 bytes spill loads
+         ptxas info    : Used 63 registers, 15600+0 bytes smem, 392 bytes cmem[0], 140 bytes cmem[2]
+         ptxas info    : Compiling entry function '_Z25kernel_MLEFit_pix_threadsPffiiS_S_S_iS_S_i' for 'sm_30'
+         ptxas info    : Function properties for _Z25kernel_MLEFit_pix_threadsPffiiS_S_S_iS_S_i
+             304 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+         ptxas info    : Used 35 registers, 4164+0 bytes smem, 396 bytes cmem[0], 132 bytes cmem[2]
+         ptxas info    : Compiling entry function '_Z19kernel_MLEFit_sigmaPffiiS_S_S_iS_S_' for 'sm_30'
+         ptxas info    : Function properties for _Z19kernel_MLEFit_sigmaPffiiS_S_S_iS_S_
+             432 bytes stack frame, 12 bytes spill stores, 12 bytes spill loads
+         ptxas info    : Used 63 registers, 15600+0 bytes smem, 392 bytes cmem[0], 140 bytes cmem[2]
+         GPUgaussMLEv2_db_yl.cu
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(934): warning : variable "gamma" was declared but never referenced
+         
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(1683): warning : variable "s_varim" was set but never used
+         
+     1>D:/EMBL/Yale/Code/Matlab/MLE_sCMOS/Own Project_David code/sCMOS_MLE_YL/sCMOS_MLE/GPUgaussMLEv2_db_yl.cu(1684): warning : variable "s_gainim" was set but never used
+         
+         ptxas info    : Compiling entry function '_Z13kernel_MLEFitPffiiS_S_S_iS_S_' for 'sm_20'
+         ptxas info    : Function properties for _Z13kernel_MLEFitPffiiS_S_S_iS_S_
+             312 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+         ptxas info    : Used 51 registers, 15600+0 bytes smem, 104 bytes cmem[0], 108 bytes cmem[16]
+         ptxas info    : Compiling entry function '_Z31kernel_MLEFit_pix_threads_sigmaPffiiS_S_S_iS_S_i' for 'sm_20'
+         ptxas info    : Function properties for _Z31kernel_MLEFit_pix_threads_sigmaPffiiS_S_S_iS_S_i
+             400 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+         ptxas info    : Used 42 registers, 4180+0 bytes smem, 108 bytes cmem[0], 148 bytes cmem[16]
+         ptxas info    : Compiling entry function '_Z15kernel_MLEFit_zPfffffffffiiS_S_S_iS_S_' for 'sm_20'
+         ptxas info    : Function properties for _Z15kernel_MLEFit_zPfffffffffiiS_S_S_iS_S_
+             528 bytes stack frame, 144 bytes spill stores, 140 bytes spill loads
+         ptxas info    : Used 63 registers, 15600+0 bytes smem, 128 bytes cmem[0], 120 bytes cmem[16]
+         ptxas info    : Compiling entry function '_Z31kernel_MLEFit_pix_threads_astigPffiiS_S_S_iS_S_i' for 'sm_20'
+         ptxas info    : Function properties for _Z31kernel_MLEFit_pix_threads_astigPffiiS_S_S_iS_S_i
+             472 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+         ptxas info    : Used 40 registers, 4196+0 bytes smem, 108 bytes cmem[0], 148 bytes cmem[16]
+         ptxas info    : Compiling entry function '_Z21kernel_MLEFit_sigmaxyPffiiS_S_S_iS_S_' for 'sm_20'
+         ptxas info    : Function properties for _Z21kernel_MLEFit_sigmaxyPffiiS_S_S_iS_S_
+             544 bytes stack frame, 36 bytes spill stores, 32 bytes spill loads
+         ptxas info    : Used 63 registers, 15600+0 bytes smem, 104 bytes cmem[0], 132 bytes cmem[16]
+         ptxas info    : Compiling entry function '_Z25kernel_MLEFit_pix_threadsPffiiS_S_S_iS_S_i' for 'sm_20'
+         ptxas info    : Function properties for _Z25kernel_MLEFit_pix_threadsPffiiS_S_S_iS_S_i
+             304 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+         ptxas info    : Used 35 registers, 4164+0 bytes smem, 108 bytes cmem[0], 124 bytes cmem[16]
+         ptxas info    : Compiling entry function '_Z19kernel_MLEFit_sigmaPffiiS_S_S_iS_S_' for 'sm_20'
+         ptxas info    : Function properties for _Z19kernel_MLEFit_sigmaPffiiS_S_S_iS_S_
+             432 bytes stack frame, 12 bytes spill stores, 12 bytes spill loads
+         ptxas info    : Used 63 registers, 15600+0 bytes smem, 104 bytes cmem[0], 132 bytes cmem[16]
+         tmpxft_000004a0_00000000-3_GPUgaussMLEv2_db_yl.compute_30.cudafe1.cpp
+         tmpxft_000004a0_00000000-20_GPUgaussMLEv2_db_yl.compute_30.ii
+       CudaBuild:
+         Compiling CUDA source file wrapper_db.cu...
+         cmd.exe /C "C:\Users\Yiming\AppData\Local\Temp\tmpae424f4a2afb40608a2272175fecae3e.cmd"
+         "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin\nvcc.exe" -gencode=arch=compute_20,code=\"sm_20,compute_20\" -gencode=arch=compute_30,code=\"sm_30,compute_30\" --use-local-env --cl-version 2010 -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include"    --keep-dir "x64\Release" -maxrregcount=0 --ptxas-options=-v --machine 64 --compile      -Xcompiler "/EHsc /nologo /O2 /Zi  /MD  " -o "x64\Release\wrapper_db.cu.obj" "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\wrapper_db.cu"
+         
+         D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\bin\nvcc.exe" -gencode=arch=compute_20,code=\"sm_20,compute_20\" -gencode=arch=compute_30,code=\"sm_30,compute_30\" --use-local-env --cl-version 2010 -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include"    --keep-dir "x64\Release" -maxrregcount=0 --ptxas-options=-v --machine 64 --compile      -Xcompiler "/EHsc /nologo /O2 /Zi  /MD  " -o "x64\Release\wrapper_db.cu.obj" "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\wrapper_db.cu" 
+         wrapper_db.cu
+         tmpxft_00001ea4_00000000-3_wrapper_db.compute_20.cudafe1.gpu
+         tmpxft_00001ea4_00000000-7_wrapper_db.compute_20.cudafe2.gpu
+         wrapper_db.cu
+         tmpxft_00001ea4_00000000-0_wrapper_db.compute_30.cudafe1.gpu
+         tmpxft_00001ea4_00000000-11_wrapper_db.compute_30.cudafe2.gpu
+         wrapper_db.cu
+         ptxas info    : Compiling entry function '__cuda_dummy_entry__' for 'sm_20'
+         ptxas info    : Used 2 registers, 32 bytes cmem[0]
+         wrapper_db.cu
+         ptxas info    : Compiling entry function '__cuda_dummy_entry__' for 'sm_30'
+         ptxas info    : Used 2 registers, 320 bytes cmem[0]
+         tmpxft_00001ea4_00000000-3_wrapper_db.compute_20.cudafe1.cpp
+         tmpxft_00001ea4_00000000-20_wrapper_db.compute_20.ii
+       ClCompile:
+         C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64\CL.exe /c /I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\include" /Zi /nologo /W3 /WX- /O2 /Oi /GL /D WIN32 /D NDEBUG /D _CONSOLE /D _WINDLL /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Fo"x64\Release\\" /Fd"x64\Release\vc100.pdb" /Gd /TP /errorReport:prompt mexFunction.cpp
+         mexFunction.cpp
+     1>mexFunction.cpp(97): warning C4267: '=' : conversion from 'size_t' to 'int', possible loss of data
+     1>mexFunction.cpp(98): warning C4267: '=' : conversion from 'size_t' to 'int', possible loss of data
+     1>mexFunction.cpp(234): warning C4267: 'argument' : conversion from 'size_t' to 'unsigned int', possible loss of data
+     1>mexFunction.cpp(242): warning C4267: 'argument' : conversion from 'size_t' to 'unsigned int', possible loss of data
+     1>mexFunction.cpp(251): warning C4267: 'argument' : conversion from 'size_t' to 'unsigned int', possible loss of data
+       Link:
+         C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64\link.exe /ERRORREPORT:PROMPT /OUT:"D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\x64\Release\sCMOS_MLE.mexw64" /INCREMENTAL:NO /NOLOGO /LIBPATH:"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v4.2\lib\x64" cudart.lib libmex.lib libmat.lib libmx.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /DEF:"matlab.def" /MANIFEST /ManifestFile:"x64\Release\sCMOS_MLE.mexw64.intermediate.manifest" /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /PDB:"D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\x64\Release\sCMOS_MLE.pdb" /SUBSYSTEM:CONSOLE /OPT:REF /OPT:ICF /LTCG /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\x64\Release\sCMOS_MLE.lib" /MACHINE:X64 /DLL x64\Release\GPUgaussMLEv2_db_yl.cu.obj
+         x64\Release\wrapper_db.cu.obj
+         x64\Release\mexFunction.obj
+            Creating library D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\x64\Release\sCMOS_MLE.lib and object D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\x64\Release\sCMOS_MLE.exp
+         Generating code
+         Finished generating code
+         sCMOS_MLE.vcxproj -> D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\x64\Release\sCMOS_MLE.mexw64
+       Manifest:
+         C:\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\bin\mt.exe /nologo /verbose /outputresource:"D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\x64\Release\sCMOS_MLE.mexw64;#2" /manifest x64\Release\sCMOS_MLE.mexw64.intermediate.manifest
+       FinalizeBuildStatus:
+         Deleting file "x64\Release\sCMOS_MLE.unsuccessfulbuild".
+         Touching "x64\Release\sCMOS_MLE.lastbuildstate".
+     1>Done Building Project "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\Own Project_David code\sCMOS_MLE_YL\sCMOS_MLE\sCMOS_MLE.vcxproj" (rebuild target(s)).
+
+Build succeeded.
+
+Time Elapsed 00:00:24.88

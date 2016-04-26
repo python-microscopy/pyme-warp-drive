@@ -1,0 +1,22 @@
+﻿Build started 4/7/2016 3:46:01 PM.
+     1>Project "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\New Project\sCMOS_MLE\sCMOS_MLE\sCMOS_MLE.vcxproj" on node 2 (build target(s)).
+     1>InitializeBuildStatus:
+         Touching "x64\Debug\sCMOS_MLE.unsuccessfulbuild".
+       AddCudaCompileDeps:
+       Skipping target "AddCudaCompileDeps" because all output files are up-to-date with respect to the input files.
+       AddCudaCompileDeps:
+       Skipping target "AddCudaCompileDeps" because all output files are up-to-date with respect to the input files.
+       CudaBuild:
+         Compiling CUDA source file GPUgaussMLEv2_db.cu...
+         cmd.exe /C "C:\Users\Yiming\AppData\Local\Temp\tmp287cd750120742fbb7345a059fda518d.cmd"
+         "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.5\bin\nvcc.exe" -gencode=arch=compute_20,code=\"sm_20,compute_20\" -gencode=arch=compute_30,code=\"sm_30,compute_30\" --use-local-env --cl-version 2010 -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.5\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.5\include"  -G   --keep-dir x64\Debug -maxrregcount=0 --ptxas-options=-v --machine 64 --compile -cudart static  -g   -DWIN32 -DNDEBUG -D_CONSOLE -D_WINDLL -D_UNICODE -DUNICODE -Xcompiler "/EHsc /W3 /nologo /O2 /Zi /RTC1 /MDd " -o x64\Debug\GPUgaussMLEv2_db.cu.obj "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\New Project\sCMOS_MLE\sCMOS_MLE\GPUgaussMLEv2_db.cu"
+         
+         D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\New Project\sCMOS_MLE\sCMOS_MLE>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.5\bin\nvcc.exe" -gencode=arch=compute_20,code=\"sm_20,compute_20\" -gencode=arch=compute_30,code=\"sm_30,compute_30\" --use-local-env --cl-version 2010 -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.5\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.5\include"  -G   --keep-dir x64\Debug -maxrregcount=0 --ptxas-options=-v --machine 64 --compile -cudart static  -g   -DWIN32 -DNDEBUG -D_CONSOLE -D_WINDLL -D_UNICODE -DUNICODE -Xcompiler "/EHsc /W3 /nologo /O2 /Zi /RTC1 /MDd " -o x64\Debug\GPUgaussMLEv2_db.cu.obj "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\New Project\sCMOS_MLE\sCMOS_MLE\GPUgaussMLEv2_db.cu" 
+     1>cl : Command line error D8016: '/O2' and '/RTC1' command-line options are incompatible
+         GPUgaussMLEv2_db.cu
+     1>C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\BuildCustomizations\CUDA 7.5.targets(604,9): error MSB3721: The command ""C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.5\bin\nvcc.exe" -gencode=arch=compute_20,code=\"sm_20,compute_20\" -gencode=arch=compute_30,code=\"sm_30,compute_30\" --use-local-env --cl-version 2010 -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.5\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.5\include"  -G   --keep-dir x64\Debug -maxrregcount=0 --ptxas-options=-v --machine 64 --compile -cudart static  -g   -DWIN32 -DNDEBUG -D_CONSOLE -D_WINDLL -D_UNICODE -DUNICODE -Xcompiler "/EHsc /W3 /nologo /O2 /Zi /RTC1 /MDd " -o x64\Debug\GPUgaussMLEv2_db.cu.obj "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\New Project\sCMOS_MLE\sCMOS_MLE\GPUgaussMLEv2_db.cu"" exited with code 2.
+     1>Done Building Project "D:\EMBL\Yale\Code\Matlab\MLE_sCMOS\New Project\sCMOS_MLE\sCMOS_MLE\sCMOS_MLE.vcxproj" (build target(s)) -- FAILED.
+
+Build FAILED.
+
+Time Elapsed 00:00:00.21
