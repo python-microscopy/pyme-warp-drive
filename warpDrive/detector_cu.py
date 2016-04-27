@@ -276,20 +276,22 @@ def finderCompile():
         }
 
         __global__ void findPeaks(float *unif, float *maxfData, float thresh, const int colsize,
-        int *counter, int *candPos){
+        int *counter, int *candPos, const int halfROIsize){
 
         int dloc = blockIdx.x*colsize + threadIdx.x;
         int temp;
 
         //maxfData[dloc] = (unif[dloc] >= 0.99999999*maxfData[dloc]) && (unif[dloc] > thresh);
 
-
-
         //if ((unif[dloc] >= 0.99999999*maxfData[dloc]) && (unif[dloc] > thresh)){
         if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > thresh)){
-            maxfData[dloc] = 1;
-            temp = atomicAdd(counter, 1);
-            candPos[temp] = dloc;
+            if ((blockIdx.x>halfROIsize) && (blockDim.x - blockIdx.x > halfROIsize) && (threadIdx.x>halfROIsize) &&(colsize - threadIdx.x > halfROIsize)){
+                maxfData[dloc] = 1;
+                temp = atomicAdd(counter, 1);
+                candPos[temp] = dloc;
+
+            }
+
         }
             else {
                 maxfData[dloc] = 0;
@@ -920,8 +922,11 @@ def gaussMLE_Fang_David():
             if (pixelIndex == 0){
                 //if (blockIdx.x == 0) printf("x pos %f, y pos %f    ", theta[0], theta[1]);
                 //if (blockIdx.x == 0) printf("x Offset %d, y Offset %d    ", uplc % numbCol, uplc / numbCol);
+                //printf("Candidate Position: %d, x Offset %d, y Offset %d   ", candPos[blockIdx.x], uplc % numbCol, uplc / numbCol);
                 theta[0] += (float) (uplc % numbCol); //Row offset (x)
                 theta[1] += (float) (uplc / numbCol); //Column offset (y)
+                //rezero the list of candidate molecules so that it no longer needs to be reallocated for each frame's fit.
+                candPos[blockIdx.x] = 0;
             }
 
 
@@ -935,8 +940,7 @@ def gaussMLE_Fang_David():
             }
 
 
-            //rezero the list of candidate molecules so that it no longer needs to be reallocated for each frame's fit.
-            candPos[blockIdx.x] = 0;
+
 
             return;
         }
