@@ -216,7 +216,7 @@ class detector:
         #plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
 
 
-    def getCand(self):
+    def getCand(self, thresh=4, ROISize=16):
 
 
         self.maxfrow(self.unif1_gpu, self.maxfData_gpu, self.colsize, self.halfMaxFilt, block=(self.csize, 1, 1),
@@ -244,8 +244,8 @@ class detector:
 
 
         #findPeaks(float *unif, float *maxfData, const int thresh, const int colsize)
-        self.findpeaks(self.unif1_gpu, self.maxfData_gpu, self.thresh, self.colsize, self.candCount_gpu,
-                       self.candPos_gpu, np.int32(0.5*self.ROIsize), block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.dstreamer1)
+        self.findpeaks(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.colsize, self.candCount_gpu,
+                       self.candPos_gpu, np.int32(0.5*ROISize), block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.dstreamer1)
 
         #self.dstreamer1.synchronize()
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
@@ -260,7 +260,7 @@ class detector:
 
 
 
-    def fitItSlow(self):
+    def fitItSlow(self, ROISize=16):
         """
         This function runs David's fast GPU fit, but it reallocates memory for the fit-parameter arrays
         on each run.
@@ -286,17 +286,19 @@ class detector:
         print(np.shape(self.CRLB))
         print(self.candCount)
 
-        self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(self.ROIsize), np.int32(200),# FIXME: note, second ROIsize would normally be FOV size
+        #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(self.ROIsize), np.int32(200),# FIXME: note, second ROIsize would normally be FOV size
+        self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(ROISize), np.int32(200),
                         self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.candCount_gpu, self.invvar_gpu, self.gain_gpu,
                         self.calcCRLB, self.candPos_gpu, np.int32(self.rsize),# self.testROI_gpu,
-                        block=(self.ROIsize, self.ROIsize, 1), grid=(int(self.candCount), 1), stream=self.dstreamer1)
+                        block=(ROISize, ROISize, 1), grid=(int(self.candCount), 1), stream=self.dstreamer1)
 
         cuda.memcpy_dtoh_async(self.dpars, self.dpars_gpu, stream=self.dstreamer1)
-        self.dpars = np.reshape(self.dpars, (6, self.candCount))
-        #self.fitpars = np.reshape(self.dpars, (self.candCount, 6))
+        #self.dpars = np.reshape(self.dpars, (6, self.candCount))
+        self.dpars = np.reshape(self.dpars, (self.candCount, 6))
+        ##self.fitpars = np.reshape(self.dpars, (self.candCount, 6))
 
         cuda.memcpy_dtoh_async(self.CRLB, self.CRLB_gpu, stream=self.dstreamer1)
-        self.CRLB = np.reshape(self.CRLB, (6, self.candCount))
+        self.CRLB = np.reshape(self.CRLB, (self.candCount, 6))
         cuda.memcpy_dtoh_async(self.LLH, self.LLH_gpu, stream=self.dstreamer1)
 
         #plt.show(plt.imshow(self.data, interpolation='nearest'))
