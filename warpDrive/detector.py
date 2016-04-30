@@ -286,8 +286,8 @@ class detector:
         #self.testROI = np.zeros((self.ROIsize, self.ROIsize), dtype=np.float32)
         #self.testROI_gpu = cuda.mem_alloc(self.testROI.size*self.testROI.dtype.itemsize)
         #cuda.memcpy_htod(self.testROI_gpu, self.testROI)
-        print(np.shape(self.CRLB))
-        print(self.candCount)
+        #print(np.shape(self.CRLB))
+        #print(self.candCount)
 
         #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(self.ROIsize), np.int32(200),# FIXME: note, second ROIsize would normally be FOV size
         self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(ROISize), np.int32(200),
