@@ -214,6 +214,7 @@ class detector:
         #self.dstreamer1.synchronize()
 
         #cuda.memcpy_dtoh(self.dtarget, self.unif1_gpu)
+        #import matplotlib.pyplot as plt
         #plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
 
 
@@ -290,7 +291,7 @@ class detector:
         #print(self.candCount)
 
         #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(self.ROIsize), np.int32(200),# FIXME: note, second ROIsize would normally be FOV size
-        self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(ROISize), np.int32(200),
+        self.gaussAstig(self.data_gpu, np.float32(5), np.int32(ROISize), np.int32(200),
                         self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.candCount_gpu, self.invvar_gpu, self.gain_gpu,
                         self.calcCRLB, self.candPos_gpu, np.int32(self.rsize),# self.testROI_gpu,
                         block=(ROISize, ROISize, 1), grid=(int(self.candCount), 1), stream=self.dstreamer1)

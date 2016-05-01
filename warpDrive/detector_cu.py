@@ -347,7 +347,7 @@ def gaussMLE_Fang_David():
         #include "MatInvLib.h"
         #include "GPUgaussLib.cuh"
         #include "GPUgaussMLEv2.h"
-        #include "math.h"
+        //#include "math.h"
         // Thread block size
         #define BSZ 64
         //#define BSZ 64
@@ -707,7 +707,7 @@ def gaussMLE_Fang_David():
             pixel_variance = d_varim[blockOffset + pixelIndex];
             pixel_gain = d_gainim[blockOffset + pixelIndex];
             */
-            //FIXME USE IF STATEMENT TO ENSURE CANDIDATE IS NOT WITHIN 0.5*blocksize OF EDGE
+
 
             int uplc = candPos[blockIdx.x] - (0.5*blockDim.x) - (0.5*blockDim.y)*numbCol; //upper left hand corner of the subROI
             pixel_data = d_data[uplc + threadIdx.x + threadIdx.y*numbCol];
@@ -794,8 +794,8 @@ def gaussMLE_Fang_David():
                 df=0.0;
                 if (model>10e-3) cf=data/model-1;
                 if (model>10e-3) df=data/(model*model);
-                cf=fminf(cf, 10e4);
-                df=fminf(df, 10e4);
+                cf=min(cf, 10e4);
+                df=min(df, 10e4);
 
                 for (ll=0;ll < NUM_VARS_ASTIG;ll++){
                     s_temp0[pixelIndex] = dudt[ll]*cf;
@@ -811,9 +811,10 @@ def gaussMLE_Fang_David():
                 //rather than looping over the variables, use the first NUM_VARS_ASTIG threads
                 if (ll < NUM_VARS_ASTIG){
                     if (kk<2) //FIXME check to see if this should be for the first 5 iterations instead
-                        theta[ll]-=gamma[ll]*fminf(fmaxf(NR_Numerator[ll]/NR_Denominator[ll], -maxjump[ll]), maxjump[ll]);
+                    //if (kk<5) //FIXME check to see if this should be for the first 5 iterations instead
+                        theta[ll]-=gamma[ll]*min(fmaxf(NR_Numerator[ll]/NR_Denominator[ll], -maxjump[ll]), maxjump[ll]);
                     else
-                        theta[ll]-=fminf(fmaxf(NR_Numerator[ll]/NR_Denominator[ll], -maxjump[ll]), maxjump[ll]);
+                        theta[ll]-=min(fmaxf(NR_Numerator[ll]/NR_Denominator[ll], -maxjump[ll]), maxjump[ll]);
 
                 }
                 __syncthreads();
