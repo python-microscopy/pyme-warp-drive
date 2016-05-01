@@ -284,16 +284,16 @@ class detector:
         cuda.memcpy_htod(self.LLH_gpu, self.LLH)
 
         # CRLBs needs to be 6 x candCount, and LogLikelihood needs to be 1xcandCount long
-        #self.testROI = np.zeros((self.ROIsize, self.ROIsize), dtype=np.float32)
-        #self.testROI_gpu = cuda.mem_alloc(self.testROI.size*self.testROI.dtype.itemsize)
-        #cuda.memcpy_htod(self.testROI_gpu, self.testROI)
+        self.testROI = np.zeros((ROISize, ROISize), dtype=np.float32)
+        self.testROI_gpu = cuda.mem_alloc(self.testROI.size*self.testROI.dtype.itemsize)
+        cuda.memcpy_htod(self.testROI_gpu, self.testROI)
         #print(np.shape(self.CRLB))
         #print(self.candCount)
 
         #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(self.ROIsize), np.int32(200),# FIXME: note, second ROIsize would normally be FOV size
-        self.gaussAstig(self.data_gpu, np.float32(5), np.int32(ROISize), np.int32(200),
+        self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(ROISize), np.int32(200),
                         self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.candCount_gpu, self.invvar_gpu, self.gain_gpu,
-                        self.calcCRLB, self.candPos_gpu, np.int32(self.rsize),# self.testROI_gpu,
+                        self.calcCRLB, self.candPos_gpu, np.int32(self.rsize), self.testROI_gpu,
                         block=(ROISize, ROISize, 1), grid=(int(self.candCount), 1), stream=self.dstreamer1)
 
         cuda.memcpy_dtoh_async(self.dpars, self.dpars_gpu, stream=self.dstreamer1)
@@ -305,10 +305,15 @@ class detector:
         self.CRLB = np.reshape(self.CRLB, (self.candCount, 6))
         cuda.memcpy_dtoh_async(self.LLH, self.LLH_gpu, stream=self.dstreamer1)
 
+        '''
+        cuda.memcpy_dtoh(self.testROI, self.testROI_gpu)
+        import matplotlib.pyplot as plt
+        plt.imshow(self.testROI, interpolation='nearest')
+        #plt.scatter()
         #plt.show(plt.imshow(self.data, interpolation='nearest'))
-        #plt.scatter(self.dpars[0], self.dpars[1])
-        #plt.show()
-
+        #plt.scatter(self.dpars[0, 1], self.dpars[0, 0])
+        plt.show()
+        '''
 
         return
 

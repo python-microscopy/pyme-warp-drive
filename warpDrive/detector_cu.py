@@ -613,7 +613,7 @@ def gaussMLE_Fang_David():
 
         __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, int sz, int iterations,
                 float *d_Parameters, float *d_CRLBs, float *d_LogLikelihood,int Nfits, float *d_varim, float *d_gainim, int calcCRB,
-                int *candPos, int numbCol){
+                int *candPos, int numbCol, float *testROI){
             /* A version of MLEFit that uses per-pixel, rather than per fit threads
 
             Each block consists corresponds to one ROI. threadIdx.x is the x pixel coordinate,
@@ -709,7 +709,8 @@ def gaussMLE_Fang_David():
             */
 
 
-            int uplc = candPos[blockIdx.x] - (0.5*blockDim.x) - (0.5*blockDim.y)*numbCol; //upper left hand corner of the subROI
+            //int uplc = candPos[blockIdx.x] - (0.5*blockDim.x) - (0.5*blockDim.y)*numbCol; //upper left hand corner of the subROI
+            int uplc = candPos[blockIdx.x] - (0.5*(blockDim.x - 2)) - (0.5*(blockDim.y - 2))*numbCol;//fixme testing
             pixel_data = d_data[uplc + threadIdx.x + threadIdx.y*numbCol];
             pixel_variance = d_varim[uplc + threadIdx.x + threadIdx.y*numbCol];
             pixel_gain = d_gainim[uplc + threadIdx.x + threadIdx.y*numbCol];
@@ -727,11 +728,11 @@ def gaussMLE_Fang_David():
             //wait untill all loads have taken place
             __syncthreads();
 
-            /*
-            if (blockIdx.x ==0){
-                testROI[pixelIndex] = pixel_data;
 
-            }*/
+            //if (blockIdx.x ==0){
+            testROI[pixelIndex] = data;
+            __syncthreads();
+            //}
             //initial values
             //==============
             //Find Center of mass
