@@ -4,11 +4,11 @@ import scipy.io
 import time
 
 '''Load data, gain, and variance from .mat files'''
-rawdat = np.ascontiguousarray(scipy.io.loadmat('/media/aeb85/060EE6D90EE6C0B3/Users/aeb85/Desktop/matlabFitData/imqd1_300.mat')['imqd1_300'], dtype=np.float32)
+rawdat = np.ascontiguousarray(scipy.io.loadmat('TestData/imqd1_300.mat')['imqd1_300'], dtype=np.float32)
 #rawdat = rawdat.astype(np.float32)
 #varmap = np.ascontiguousarray(scipy.io.loadmat('/home/aeb85/PycharmProjects/candidatedetection/TiffsForMatlabPyCUDAcomparison/quadrant1/LargeKernel_12pix/varmap.mat')['varmap'][:,:,299], dtype=np.float32)
-varmap = np.ascontiguousarray(scipy.io.loadmat('/media/aeb85/060EE6D90EE6C0B3/Users/aeb85/Desktop/matlabFitData/varmap.mat')['varmap'], dtype=np.float32)
-gainmap = np.ascontiguousarray(scipy.io.loadmat('/media/aeb85/060EE6D90EE6C0B3/Users/aeb85/Desktop/matlabFitData/gainim.mat')['gainim'], dtype=np.float32)
+varmap = np.ascontiguousarray(scipy.io.loadmat('TestData/varmap.mat')['varmap'], dtype=np.float32)
+gainmap = np.ascontiguousarray(scipy.io.loadmat('TestData/gainim.mat')['gainim'], dtype=np.float32)
 
 
 halfFilt = np.int32(6) #set half of the filter size
@@ -26,7 +26,7 @@ _warpDrive = detector(np.shape(rawdat), rawdat.dtype.itemsize, dfilter1, dfilter
 _warpDrive.allocateMem()
 _warpDrive.prepvar(varmap, gainmap)
 
-stppwr = 4
+stppwr = 0
 #stppwr = 0
 print 10**stppwr
 #cuda.start_profiler()
