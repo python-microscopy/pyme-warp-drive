@@ -951,4 +951,6 @@ def gaussMLE_Fang_David():
     """
 
     mod = SourceModule(fitKernel, include_dirs=['/home/aeb85/PycharmProjects/candidatedetection/cudaResources/SingleMLEsCMOS', '/home/aeb85/PycharmProjects/candidatedetection/cudaResources'])
+    #mod = SourceModule(fitKernel, include_dirs=['cudaResources/SingleMLEsCMOS', 'cudaResources'])
+
     return mod
