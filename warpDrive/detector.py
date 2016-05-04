@@ -106,9 +106,12 @@ class detector:
         self.candPos_gpu = cuda.mem_alloc(self.candPos.size*self.candPos.dtype.itemsize)
         cuda.memcpy_htod(self.candPos_gpu, self.candPos)
 
+        #current soln for leaving gain*var on GPU for smoothing:
+        self.gtimesv_gpu = cuda.mem_alloc(self.dsize)
+
         # for troubleshooting:
         self.dtarget = np.zeros(self.dshape, dtype=np.float32)
-        self.dtarget2 = np.zeros(self.dshape, dtype=np.float32)
+        #self.dtarget2 = np.zeros(self.dshape, dtype=np.float32)
 
 
 
@@ -127,10 +130,11 @@ class detector:
     def prepvar(self, varmap, flatmap):
         self.varmap = varmap
         print(np.shape(varmap))
+        cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(flatmap, dtype=np.float32), stream=self.vstreamer2)
+        #cuda.memcpy_htod_async(self.gtimesv_gpu, self.varmap/flatmap, stream=self.vstreamer1)
         cuda.memcpy_htod(self.filter1_gpu, self.dfilterBig)
         cuda.memcpy_htod(self.filter2_gpu, self.dfilterSmall)
         cuda.memcpy_htod(self.invvar_gpu, varmap)
-        cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(1./flatmap, dtype=np.float32), stream=self.vstreamer2)
 
 
         #self.varprep(self.invvar_gpu, self.unif1v_gpu, self.unif2v_gpu, self.filter1_gpu, self.filter2_gpu,
@@ -180,11 +184,11 @@ class detector:
                    self.halfFiltBig, self.halfFiltSmall, self.colsize, block=(self.csize, 1, 1),
                    grid=(self.rsize, 1), stream=self.dstreamer1)
                    """
-        self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.filter1_gpu,
+        self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.gain_gpu, self.filter1_gpu,
                    self.halfFiltBig, self.colsize, block=(self.csize, 1, 1),
                    grid=(self.rsize, 1), stream=self.dstreamer1)
 
-        self.rfunc(self.data_gpu, self.invvar_gpu, self.unif2_gpu, self.filter2_gpu,
+        self.rfunc(self.data_gpu, self.invvar_gpu, self.unif2_gpu, self.gain_gpu, self.filter2_gpu,
                    self.halfFiltSmall, self.colsize, block=(self.csize, 1, 1),
                    grid=(self.rsize, 1), stream=self.dstreamer2)
 
@@ -213,9 +217,9 @@ class detector:
         # AND the next call, maxfrow in getCand is also in dstreamer1
         #self.dstreamer1.synchronize()
 
-        #cuda.memcpy_dtoh(self.dtarget, self.unif1_gpu)
-        #import matplotlib.pyplot as plt
-        #plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
+        cuda.memcpy_dtoh(self.dtarget, self.unif1_gpu)
+        import matplotlib.pyplot as plt
+        plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
 
 
     def getCand(self, thresh=4, ROISize=16):
@@ -285,16 +289,16 @@ class detector:
         cuda.memcpy_htod(self.LLH_gpu, self.LLH)
 
         # CRLBs needs to be 6 x candCount, and LogLikelihood needs to be 1xcandCount long
-        self.testROI = np.zeros((ROISize, ROISize), dtype=np.float32)
-        self.testROI_gpu = cuda.mem_alloc(self.testROI.size*self.testROI.dtype.itemsize)
-        cuda.memcpy_htod(self.testROI_gpu, self.testROI)
+        #self.testROI = np.zeros((ROISize, ROISize), dtype=np.float32)
+        #self.testROI_gpu = cuda.mem_alloc(self.testROI.size*self.testROI.dtype.itemsize)
+        #cuda.memcpy_htod(self.testROI_gpu, self.testROI)
         #print(np.shape(self.CRLB))
         #print(self.candCount)
 
         #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(self.ROIsize), np.int32(200),# FIXME: note, second ROIsize would normally be FOV size
         self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(ROISize), np.int32(200),
                         self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.candCount_gpu, self.invvar_gpu, self.gain_gpu,
-                        self.calcCRLB, self.candPos_gpu, np.int32(self.rsize), self.testROI_gpu,
+                        self.calcCRLB, self.candPos_gpu, np.int32(self.rsize),# self.testROI_gpu,
                         block=(ROISize, ROISize, 1), grid=(int(self.candCount), 1), stream=self.dstreamer1)
 
         cuda.memcpy_dtoh_async(self.dpars, self.dpars_gpu, stream=self.dstreamer1)

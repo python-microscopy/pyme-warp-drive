@@ -9,7 +9,7 @@ rawdat = np.ascontiguousarray(scipy.io.loadmat('TestData/imqd1_300.mat')['imqd1_
 #varmap = np.ascontiguousarray(scipy.io.loadmat('/home/aeb85/PycharmProjects/candidatedetection/TiffsForMatlabPyCUDAcomparison/quadrant1/LargeKernel_12pix/varmap.mat')['varmap'][:,:,299], dtype=np.float32)
 varmap = np.ascontiguousarray(scipy.io.loadmat('TestData/varmap.mat')['varmap'], dtype=np.float32)
 gainmap = np.ascontiguousarray(scipy.io.loadmat('TestData/gainim.mat')['gainim'], dtype=np.float32)
-
+rawdat = rawdat*gainmap
 
 halfFilt = np.int32(6) #set half of the filter size
 dfilter1 = normUnifFilter(2*halfFilt)
