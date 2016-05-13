@@ -36,8 +36,10 @@ telapsed = []
 for ind in range(0, 10**stppwr):
     t0 = time.time()
     _warpDrive.smoothFrame(rawdat)
-    _warpDrive.getCand(3.7, 16) #adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
-    _warpDrive.fitItSlow(18) #NOTE: need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
+    #_warpDrive.getCand(3.7, 16) #adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
+    #_warpDrive.fitItSlow(18) #NOTE: need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
+    _warpDrive.getCand(3.7, 16)
+    _warpDrive.fitItSlow()
     t1 = time.time()
     telapsed.append(t1-t0)
 
@@ -48,7 +50,7 @@ for ind in range(0, 10**stppwr):
 ################################################################################
 ################################################################################
 ################################################################################
-
+'''
 print('Mean runtime of %.7f, +- %.7f' % (np.mean(telapsed), np.std(telapsed)))
 
 print _warpDrive.dpars.shape
@@ -57,3 +59,4 @@ import matplotlib.pyplot as plt
 plt.imshow(rawdat)
 plt.scatter(_warpDrive.dpars[:, 0], _warpDrive.dpars[:, 1])
 plt.show()
+'''

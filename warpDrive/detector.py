@@ -217,9 +217,9 @@ class detector:
         # AND the next call, maxfrow in getCand is also in dstreamer1
         #self.dstreamer1.synchronize()
 
-        cuda.memcpy_dtoh(self.dtarget, self.unif1_gpu)
-        import matplotlib.pyplot as plt
-        plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
+        #cuda.memcpy_dtoh(self.dtarget, self.unif1_gpu)
+        #import matplotlib.pyplot as plt
+        #plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
 
 
     def getCand(self, thresh=4, ROISize=16):
@@ -274,6 +274,7 @@ class detector:
         This function runs David's fast GPU fit, but it reallocates memory for the fit-parameter arrays
         on each run.
         """
+
         # for astig, Num_Vars = 6, so dpars needs to be at least 6 x candCount
         #self.dpars = np.zeros((6, self.candCount), dtype=np.float32)
         self.dpars = np.zeros(6*self.candCount, dtype=np.float32)

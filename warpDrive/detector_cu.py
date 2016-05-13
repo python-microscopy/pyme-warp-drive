@@ -1,3 +1,5 @@
+import os
+
 def detectorCompileNBlock_sCMOS():
     #-------------------------------------------------------------------------------#
     #-------------------------------------------------------------------------------#
@@ -951,7 +953,12 @@ def gaussMLE_Fang_David():
 
     """
 
-    mod = SourceModule(fitKernel, include_dirs=['/home/aeb85/PycharmProjects/candidatedetection/cudaResources/SingleMLEsCMOS', '/home/aeb85/PycharmProjects/candidatedetection/cudaResources'])
-    #mod = SourceModule(fitKernel, include_dirs=['cudaResources/SingleMLEsCMOS', 'cudaResources'])
+    # //dPath = os.path.split('__filename__')[0]
+    dPath = os.path.dirname(__file__)
+    print dPath
+    print os.path.join(dPath,'cudaResources')
+    #mod = SourceModule(fitKernel, include_dirs=['/home/aeb85/PycharmProjects/candidatedetection/cudaResources/SingleMLEsCMOS', '/home/aeb85/PycharmProjects/candidatedetection/cudaResources'],
+    #options=["--maxrregcount=32"])
+    mod = SourceModule(fitKernel, include_dirs=[os.path.join(dPath,'cudaResources')], options=["--maxrregcount=32"])
 
     return mod
