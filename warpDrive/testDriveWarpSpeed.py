@@ -26,7 +26,7 @@ _warpDrive = detector(np.shape(rawdat), rawdat.dtype.itemsize, dfilter1, dfilter
 _warpDrive.allocateMem()
 _warpDrive.prepvar(varmap, gainmap)
 
-stppwr = 0
+stppwr = 2
 #stppwr = 0
 print 10**stppwr
 #cuda.start_profiler()
@@ -50,6 +50,10 @@ for ind in range(0, 10**stppwr):
 ################################################################################
 ################################################################################
 ################################################################################
+
+print('Mean runtime of %.7f, +- %.7f' % (np.mean(telapsed), np.std(telapsed)))
+
+
 '''
 print('Mean runtime of %.7f, +- %.7f' % (np.mean(telapsed), np.std(telapsed)))
 

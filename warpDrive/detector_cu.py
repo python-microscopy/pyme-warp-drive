@@ -32,7 +32,7 @@ def detectorCompileNBlock_sCMOS():
     #    fitKernel = f.read()
 
 
-    mod = SourceModule(FILTER_SOURCE))
+    mod = SourceModule(FILTER_SOURCE)
     return mod
 
 def finderCompile():
@@ -50,7 +50,7 @@ def finderCompile():
     #    fitKernel = f.read()
 
 
-    mod = SourceModule(FINDPEAKS_SOURCE))
+    mod = SourceModule(FINDPEAKS_SOURCE)
 
     return mod
 
