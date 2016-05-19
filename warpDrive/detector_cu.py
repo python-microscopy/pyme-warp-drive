@@ -11,7 +11,7 @@ with open(os.path.join(dPath,'findPeaks.cu'), 'r') as f:
     FINDPEAKS_SOURCE = f.read()
 
 with open(os.path.join(dPath,'GaussMLE.cu'), 'r') as f:
-    GAUSMLE_SOURCE = f.read()
+    GAUSSMLE_SOURCE = f.read()
 
 
 def detectorCompileNBlock_sCMOS():
@@ -78,6 +78,6 @@ def gaussMLE_Fang_David():
     #print os.path.join(dPath,'cudaResources')
     #mod = SourceModule(fitKernel, include_dirs=['/home/aeb85/PycharmProjects/candidatedetection/cudaResources/SingleMLEsCMOS', '/home/aeb85/PycharmProjects/candidatedetection/cudaResources'],
     #options=["--maxrregcount=32"])
-    mod = SourceModule(GAUSMLE_SOURCE, include_dirs=[os.path.join(dPath,'cudaResources')], options=["--maxrregcount=32"])
+    mod = SourceModule(GAUSSMLE_SOURCE, include_dirs=[os.path.join(dPath,'cudaResources')], options=["--maxrregcount=32"])
 
     return mod
