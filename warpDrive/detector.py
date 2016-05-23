@@ -126,15 +126,31 @@ class detector:
         #self.ROIsize = int(16)  #int(self.dshape[0])  #int(18)
         self.calcCRLB = np.int32(1)
 
+        self.maxCandCount = 400
+        self.dparsZ = np.zeros(6*self.maxCandCount, dtype=np.float32)
+        self.dpars = np.zeros_like(self.dparsZ)
+        self.dpars_gpu = cuda.mem_alloc(self.dparsZ.size*self.dparsZ.dtype.itemsize)
+
+
+        #self.CRLBs = np.zeros((6, self.candCount), dtype=np.float32)
+        self.CRLBZ = np.zeros(6*self.maxCandCount, dtype=np.float32)
+        self.CRLB = np.zeros_like(self.CRLBZ)
+        self.CRLB_gpu = cuda.mem_alloc(self.CRLB.size*self.CRLB.dtype.itemsize)
+
+        self.LLHZ = np.zeros(self.maxCandCount, dtype=np.float32)
+        self.LLH = np.zeros_like(self.LLHZ)
+        self.LLH_gpu = cuda.mem_alloc(self.LLH.size*self.LLH.dtype.itemsize)
+
+
     #@classmethod
     def prepvar(self, varmap, flatmap):
         self.varmap = varmap
         print(np.shape(varmap))
         cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(flatmap, dtype=np.float32), stream=self.vstreamer2)
         #cuda.memcpy_htod_async(self.gtimesv_gpu, self.varmap/flatmap, stream=self.vstreamer1)
-        cuda.memcpy_htod(self.filter1_gpu, self.dfilterBig)
-        cuda.memcpy_htod(self.filter2_gpu, self.dfilterSmall)
-        cuda.memcpy_htod(self.invvar_gpu, varmap)
+        cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.dstreamer1)
+        cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.dstreamer1)
+        cuda.memcpy_htod_async(self.invvar_gpu, varmap, stream=self.dstreamer1)
 
 
         #self.varprep(self.invvar_gpu, self.unif1v_gpu, self.unif2v_gpu, self.filter1_gpu, self.filter2_gpu,
@@ -165,7 +181,7 @@ class detector:
 
         # fixme: do not need to store self.data, just using it for troubleshooting
         self.data = np.ascontiguousarray(photondat, dtype=np.float32)
-        cuda.memcpy_htod(self.data_gpu, photondat)
+        cuda.memcpy_htod_async(self.data_gpu, photondat, stream=self.dstreamer1)
 
         ########################################################################################
 
@@ -239,7 +255,7 @@ class detector:
 
         #This should be unnecessary, because calsl before and after are in the same stream
         #self.dstreamer1.synchronize()
-        cuda.memcpy_htod(self.candCount_gpu, self.candCountZ)  #rezero the candidate count
+        cuda.memcpy_htod_async(self.candCount_gpu, self.candCountZ, stream=self.dstreamer1)  #rezero the candidate count
 
         #cuda.memcpy_dtoh(self.dtarget2, self.maxfData_gpu)
         #print(type(self.dtarget[0, 0]))
@@ -277,17 +293,13 @@ class detector:
 
         # for astig, Num_Vars = 6, so dpars needs to be at least 6 x candCount
         #self.dpars = np.zeros((6, self.candCount), dtype=np.float32)
-        self.dpars = np.zeros(6*self.candCount, dtype=np.float32)
-        self.dpars_gpu = cuda.mem_alloc(self.dpars.size*self.dpars.dtype.itemsize)
-        cuda.memcpy_htod(self.dpars_gpu, self.dpars)
 
-        #self.CRLBs = np.zeros((6, self.candCount), dtype=np.float32)
-        self.CRLB = np.zeros(6*self.candCount, dtype=np.float32)
-        self.CRLB_gpu = cuda.mem_alloc(self.CRLB.size*self.CRLB.dtype.itemsize)
-        cuda.memcpy_htod(self.CRLB_gpu, self.CRLB)
-        self.LLH = np.zeros(self.candCount, dtype=np.float32)
-        self.LLH_gpu = cuda.mem_alloc(self.LLH.size*self.LLH.dtype.itemsize)
-        cuda.memcpy_htod(self.LLH_gpu, self.LLH)
+
+        # Re-zero fit outputs
+        cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
+        cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
+        cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
+
 
         # CRLBs needs to be 6 x candCount, and LogLikelihood needs to be 1xcandCount long
         #self.testROI = np.zeros((ROISize, ROISize), dtype=np.float32)
@@ -295,20 +307,25 @@ class detector:
         #cuda.memcpy_htod(self.testROI_gpu, self.testROI)
         #print(np.shape(self.CRLB))
         #print(self.candCount)
-
-        #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(self.ROIsize), np.int32(200),# FIXME: note, second ROIsize would normally be FOV size
-        self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(ROISize), np.int32(200),
+        indy = 0
+        while indy < self.candCount:
+            numBlock = int(np.min([32, self.candCount - indy]))
+            #print numBlock
+            #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(self.ROIsize), np.int32(200),# FIXME: note, second ROIsize would normally be FOV size
+            self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(ROISize), np.int32(200),
                         self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.candCount_gpu, self.invvar_gpu, self.gain_gpu,
-                        self.calcCRLB, self.candPos_gpu, np.int32(self.rsize),# self.testROI_gpu,
-                        block=(ROISize, ROISize, 1), grid=(int(self.candCount), 1), stream=self.dstreamer1)
+                        self.calcCRLB, self.candPos_gpu, np.int32(self.rsize), np.int32(indy),# self.testROI_gpu,
+                        block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
+            indy += numBlock
+
 
         cuda.memcpy_dtoh_async(self.dpars, self.dpars_gpu, stream=self.dstreamer1)
         #self.dpars = np.reshape(self.dpars, (6, self.candCount))
-        self.dpars = np.reshape(self.dpars, (self.candCount, 6))
+        self.dpars = np.reshape(self.dpars, (self.maxCandCount, 6))
         ##self.fitpars = np.reshape(self.dpars, (self.candCount, 6))
 
         cuda.memcpy_dtoh_async(self.CRLB, self.CRLB_gpu, stream=self.dstreamer1)
-        self.CRLB = np.reshape(self.CRLB, (self.candCount, 6))
+        self.CRLB = np.reshape(self.CRLB, (self.maxCandCount, 6))
         cuda.memcpy_dtoh_async(self.LLH, self.LLH_gpu, stream=self.dstreamer1)
 
         '''

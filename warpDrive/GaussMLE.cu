@@ -283,7 +283,7 @@ __device__ void kernel_sum_reduce_dual(const int BlockSize, const int pixelIndex
 
 __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, int sz, int iterations,
         float *d_Parameters, float *d_CRLBs, float *d_LogLikelihood,int Nfits, float *d_varim, float *d_gainim, int calcCRB,
-        int *candPos, int numbCol){ //, float *testROI)
+        int *candPos, int numbCol, int candOff){ //, float *testROI)
     /* A version of MLEFit that uses per-pixel, rather than per fit threads
 
     Each block consists corresponds to one ROI. threadIdx.x is the x pixel coordinate,
@@ -380,7 +380,7 @@ __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, i
 
 
     //int uplc = candPos[blockIdx.x] - (0.5*blockDim.x) - (0.5*blockDim.y)*numbCol; //upper left hand corner of the subROI
-    int uplc = candPos[blockIdx.x] - (0.5*(blockDim.x - 2)) - (0.5*(blockDim.y - 2))*numbCol;//fixme testing
+    int uplc = candPos[blockIdx.x + candOff] - (0.5*(blockDim.x - 2)) - (0.5*(blockDim.y - 2))*numbCol;//fixme testing
     //pixel_data = d_data[uplc + threadIdx.x + threadIdx.y*numbCol];
     pixel_variance = d_varim[uplc + threadIdx.x + threadIdx.y*numbCol];
     pixel_gain = d_gainim[uplc + threadIdx.x + threadIdx.y*numbCol];
@@ -571,7 +571,7 @@ __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, i
             //only in first thread ...
 
             //write our log likelihood back into global memory
-            d_LogLikelihood[blockIdx.x] = Div;
+            d_LogLikelihood[blockIdx.x+candOff] = Div;
 
             // Matrix inverse (CRLB=F^-1) and output assigments
             kernel_MatInvN(M, Minv, Diag, NUM_VARS_ASTIG);
@@ -599,7 +599,7 @@ __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, i
         theta[0] += (float) (uplc % numbCol); //Row offset (x)
         theta[1] += (float) (uplc / numbCol); //Column offset (y)
         //rezero the list of candidate molecules so that it no longer needs to be reallocated for each frame's fit.
-        candPos[blockIdx.x] = 0;
+        candPos[blockIdx.x+candOff] = 0;
     }
 
 
@@ -608,8 +608,8 @@ __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, i
     //CHECK!! - are output arrays transposed???
     //We want this matrix orientation as it optimizes memory access speed (coalescing)
     if (pixelIndex < NUM_VARS_ASTIG){
-        d_Parameters[NUM_VARS_ASTIG*blockIdx.x + pixelIndex] = theta[pixelIndex];
-        d_CRLBs[NUM_VARS_ASTIG*blockIdx.x + pixelIndex] = Diag[pixelIndex];
+        d_Parameters[NUM_VARS_ASTIG*(blockIdx.x + candOff) + pixelIndex] = theta[pixelIndex];
+        d_CRLBs[NUM_VARS_ASTIG*(blockIdx.x + candOff) + pixelIndex] = Diag[pixelIndex];
     }
 
 
