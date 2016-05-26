@@ -102,7 +102,8 @@ class detector:
         self.candCount_gpu = cuda.mem_alloc(4)
         cuda.memcpy_htod(self.candCount_gpu, self.candCount)
         #  cuda.memcpy_htod(self.candCount_gpu, self.candCountZ)
-        self.candPos = np.zeros(400, dtype=np.int32) # This size of this array sets the limit on the number of candidate molecules per frame
+        self.maxCandCount = np.int32(400)
+        self.candPos = np.zeros(self.maxCandCount, dtype=np.int32) # This size of this array sets the limit on the number of candidate molecules per frame
         self.candPos_gpu = cuda.mem_alloc(self.candPos.size*self.candPos.dtype.itemsize)
         cuda.memcpy_htod(self.candPos_gpu, self.candPos)
 
@@ -126,7 +127,7 @@ class detector:
         #self.ROIsize = int(16)  #int(self.dshape[0])  #int(18)
         self.calcCRLB = np.int32(1)
 
-        self.maxCandCount = 400
+
         self.dparsZ = np.zeros(6*self.maxCandCount, dtype=np.float32)
         self.dpars = np.zeros_like(self.dparsZ)
         self.dpars_gpu = cuda.mem_alloc(self.dparsZ.size*self.dparsZ.dtype.itemsize)
@@ -270,7 +271,8 @@ class detector:
 
         #findPeaks(float *unif, float *maxfData, const int thresh, const int colsize)
         self.findpeaks(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.colsize, self.candCount_gpu,
-                       self.candPos_gpu, np.int32(0.5*ROISize), block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.dstreamer1)
+                       self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount,
+                       block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.dstreamer1)
 
         #self.dstreamer1.synchronize()
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)

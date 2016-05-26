@@ -1,4 +1,5 @@
 #include <math.h>
+//#include <stdio.h>
 
 __global__ void maxfRowGPU(float *data, float *rconvdata, const int colsize, int halfFilt)
 //
@@ -62,7 +63,7 @@ __global__ void maxfColGPU(float *rconvdata, const int colsize, int halfFilt)
 }
 
 __global__ void findPeaks(float *unif, float *maxfData, float thresh, const int colsize,
-int *counter, int *candPos, const int halfROIsize){
+int *counter, int *candPos, const int halfROIsize, const int maxCandCount){
 
 int dloc = blockIdx.x*colsize + threadIdx.x;
 int temp;
@@ -74,7 +75,9 @@ if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > thresh)){
     if ((blockIdx.x>halfROIsize) && (blockDim.x - blockIdx.x > halfROIsize) && (threadIdx.x>halfROIsize) &&(colsize - threadIdx.x > halfROIsize)){
         maxfData[dloc] = 1;
         temp = atomicAdd(counter, 1);
-        candPos[temp] = dloc;
+        if (*counter <= maxCandCount){
+            candPos[temp] = dloc;
+        }
 
     }
 
