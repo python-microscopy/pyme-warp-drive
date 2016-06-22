@@ -12,7 +12,7 @@ __global__ void maxfRowGPU(float *data, float *rconvdata, const int colsize, int
     int j = threadIdx.x;// + halfFilt;
     float tempmax = 0;
 
-    volatile __shared__ float rdata_sh[275]; //should be changed to colsize (PADDED SIZE, or larger)
+    volatile __shared__ float rdata_sh[1075]; //FIXME: should be changed to colsize (PADDED SIZE, or larger)
     //__shared__ float filter_sh[12];
     //rdata_sh[j] = data[rid*colsize + j];
 
@@ -45,7 +45,7 @@ __global__ void maxfColGPU(float *rconvdata, const int colsize, int halfFilt)
     int j = threadIdx.x;// + halfFilt;
     float tempmax = 0;
 
-    volatile __shared__ float cdata_sh[275]; //should be changed to colsize (PADDED SIZE, or larger)
+    volatile __shared__ float cdata_sh[1075]; //FIXME: should be changed to colsize (PADDED SIZE, or larger)
 
     if (j <= (halfFilt)){
         cdata_sh[j] = 0;
