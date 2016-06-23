@@ -577,7 +577,6 @@ __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, i
             // Matrix inverse (CRLB=F^-1) and output assigments
             kernel_MatInvN(M, Minv, Diag, NUM_VARS_ASTIG);
         }
-        //FIXME couple potentially create CUDA event here to start async memcpy of LLH array
 
     }
     __syncthreads();
