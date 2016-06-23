@@ -55,7 +55,7 @@ convRowGPU
 
     //printf("threadIdx.y %d", threadIdx.y);
 
-    volatile __shared__ float rdata_sh[275]; //must be padded image size + 1, or larger)
+    volatile __shared__ float rdata_sh[1075]; //must be padded image size + 1, or larger)
     //volatile __shared__ float rdata2_sh[275];
     __shared__ float filterBig_sh[12]; //must be at least the filter size
     __shared__ float filterSmall_sh[12]; //must be at least the filter size

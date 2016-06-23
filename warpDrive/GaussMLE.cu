@@ -12,25 +12,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-//#include "mex.h"
 #include "cuda_runtime.h"
 #include "MatInvLib.h"
 #include "GPUgaussLib.cuh"
 #include "GPUgaussMLEv2.h"
-//#include "math.h"
-// Thread block size
-#define BSZ 64
-//#define BSZ 64
-#define MEM 1300
-#define IMSZ 11
-#define IMSZBIG 21
-#define NK 128 //number of blocks to run in each kernel
-#define pi 3.141592f
-#define NV_P 4
-#define NV_PS 5
-#define NV_PZ 5
-#define NV_PS2 6
 
+#define pi 3.141592f
 #define NUM_VARS 4
 #define NUM_VARS_ASTIG 6
 #define BLOCK_MAX_SIZE 512
