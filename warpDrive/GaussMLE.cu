@@ -380,7 +380,8 @@ __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, i
 
 
     //int uplc = candPos[blockIdx.x] - (0.5*blockDim.x) - (0.5*blockDim.y)*numbCol; //upper left hand corner of the subROI
-    int uplc = candPos[blockIdx.x + candOff] - (0.5*(blockDim.x - 2)) - (0.5*(blockDim.y - 2))*numbCol;//fixme testing
+    //FIXME: Check why we need this offset -> potentially has to do with convolutions using even kernel sizes
+    int uplc = candPos[blockIdx.x + candOff] - (0.5*(blockDim.x - 2)) - (0.5*(blockDim.y - 2))*numbCol;
     //pixel_data = d_data[uplc + threadIdx.x + threadIdx.y*numbCol];
     pixel_variance = d_varim[uplc + threadIdx.x + threadIdx.y*numbCol];
     pixel_gain = d_gainim[uplc + threadIdx.x + threadIdx.y*numbCol];
