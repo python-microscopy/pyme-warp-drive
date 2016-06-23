@@ -103,6 +103,7 @@ class detector:
         cuda.memcpy_htod(self.candCount_gpu, self.candCount)
         #  cuda.memcpy_htod(self.candCount_gpu, self.candCountZ)
         self.maxCandCount = np.int32(800)
+        self.fitChunkSize = 32
         self.candPos = np.zeros(self.maxCandCount, dtype=np.int32) # This size of this array sets the limit on the number of candidate molecules per frame
         self.candPos_gpu = cuda.mem_alloc(self.candPos.size*self.candPos.dtype.itemsize)
         cuda.memcpy_htod(self.candPos_gpu, self.candPos)
@@ -126,19 +127,19 @@ class detector:
         self.calcCRLB = np.int32(1)
 
 
-        self.dparsZ = np.zeros(6*self.maxCandCount, dtype=np.float32)
-        self.dpars = np.zeros_like(self.dparsZ)
+        self.dparsZ = np.zeros(6*self.fitChunkSize, dtype=np.float32)
+        self.dpars = np.zeros(6*self.maxCandCount, dtype=np.float32)
         self.dpars_gpu = cuda.mem_alloc(self.dparsZ.size*self.dparsZ.dtype.itemsize)
 
 
         #self.CRLBs = np.zeros((6, self.candCount), dtype=np.float32)
-        self.CRLBZ = np.zeros(6*self.maxCandCount, dtype=np.float32)
-        self.CRLB = np.zeros_like(self.CRLBZ)
-        self.CRLB_gpu = cuda.mem_alloc(self.CRLB.size*self.CRLB.dtype.itemsize)
+        self.CRLBZ = np.zeros(6*self.fitChunkSize, dtype=np.float32)
+        self.CRLB = np.zeros(6*self.maxCandCount, dtype=np.float32)
+        self.CRLB_gpu = cuda.mem_alloc(self.CRLBZ.size*self.CRLBZ.dtype.itemsize)
 
-        self.LLHZ = np.zeros(self.maxCandCount, dtype=np.float32)
-        self.LLH = np.zeros_like(self.LLHZ)
-        self.LLH_gpu = cuda.mem_alloc(self.LLH.size*self.LLH.dtype.itemsize)
+        self.LLHZ = np.zeros(self.fitChunkSize, dtype=np.float32)
+        self.LLH = np.zeros(self.maxCandCount, dtype=np.float32)
+        self.LLH_gpu = cuda.mem_alloc(self.LLHZ.size*self.LLHZ.dtype.itemsize)
 
 
     #@classmethod
@@ -309,24 +310,29 @@ class detector:
         #print(self.candCount)
         indy = 0
         while indy < self.candCount:
-            numBlock = int(np.min([32, self.candCount - indy]))
+            numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
             #print numBlock
             #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(self.ROIsize), np.int32(200),# FIXME: note, second ROIsize would normally be FOV size
             self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(ROISize), np.int32(200),
                         self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.candCount_gpu, self.invvar_gpu, self.gain_gpu,
                         self.calcCRLB, self.candPos_gpu, np.int32(self.rsize), np.int32(indy),# self.testROI_gpu,
                         block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
+            cuda.memcpy_dtoh_async(self.dpars[6*indy:6*int(indy + np.min([self.fitChunkSize, self.candCount - indy]))],
+                                   self.dpars_gpu, stream=self.dstreamer1)
+            cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*int(indy + np.min([self.fitChunkSize, self.candCount - indy]))],
+                                   self.CRLB_gpu, stream=self.dstreamer1)
+            cuda.memcpy_dtoh_async(self.LLH[indy:int(indy + np.min([self.fitChunkSize, self.candCount - indy]))],
+                                   self.LLH_gpu, stream=self.dstreamer1)
             indy += numBlock
 
 
-        cuda.memcpy_dtoh_async(self.dpars, self.dpars_gpu, stream=self.dstreamer1)
+
         #self.dpars = np.reshape(self.dpars, (6, self.candCount))
         self.dpars = np.reshape(self.dpars, (self.maxCandCount, 6))
         ##self.fitpars = np.reshape(self.dpars, (self.candCount, 6))
 
-        cuda.memcpy_dtoh_async(self.CRLB, self.CRLB_gpu, stream=self.dstreamer1)
         self.CRLB = np.reshape(self.CRLB, (self.maxCandCount, 6))
-        cuda.memcpy_dtoh_async(self.LLH, self.LLH_gpu, stream=self.dstreamer1)
+
 
         '''
         cuda.memcpy_dtoh(self.testROI, self.testROI_gpu)

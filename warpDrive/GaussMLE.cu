@@ -559,7 +559,7 @@ __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, i
             //only in first thread ...
 
             //write our log likelihood back into global memory
-            d_LogLikelihood[blockIdx.x+candOff] = Div;
+            d_LogLikelihood[blockIdx.x] = Div;
 
             // Matrix inverse (CRLB=F^-1) and output assigments
             kernel_MatInvN(M, Minv, Diag, NUM_VARS_ASTIG);
@@ -595,8 +595,8 @@ __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, i
     //CHECK!! - are output arrays transposed???
     //We want this matrix orientation as it optimizes memory access speed (coalescing)
     if (pixelIndex < NUM_VARS_ASTIG){
-        d_Parameters[NUM_VARS_ASTIG*(blockIdx.x + candOff) + pixelIndex] = theta[pixelIndex];
-        d_CRLBs[NUM_VARS_ASTIG*(blockIdx.x + candOff) + pixelIndex] = Diag[pixelIndex];
+        d_Parameters[NUM_VARS_ASTIG*(blockIdx.x) + pixelIndex] = theta[pixelIndex];
+        d_CRLBs[NUM_VARS_ASTIG*(blockIdx.x) + pixelIndex] = Diag[pixelIndex];
     }
 
 
