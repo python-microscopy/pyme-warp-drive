@@ -1,3 +1,10 @@
+"""
+detector_cu.py handles importing the CUDA kernels as strings from their respective .cu files and then compiling them
+into PyCUDA functions. This allows the same .cu files to be used by others writing functions for MATLAB, etc..
+
+David Baddeley - Spring 2016
+"""
+
 import os
 
 dPath = os.path.dirname(__file__)
