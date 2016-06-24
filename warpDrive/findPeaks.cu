@@ -1,5 +1,10 @@
-#include <math.h>
-//#include <stdio.h>
+/*
+findPeaks.cu contains kernels to perform maximum filter, and from that extract candidate molecule positions
+
+Andrew Barentine - Spring 2016
+*/
+
+#include <math.h> // for fmaxf
 
 __global__ void maxfRowGPU(float *data, float *rconvdata, const int colsize, int halfFilt)
 //
