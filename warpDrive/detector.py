@@ -138,7 +138,7 @@ class detector:
         cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.dstreamer1)
         cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.dstreamer1)
         # FIXME: double check that AstigGaussGPUFitFR doesn't redundantly call ascontiguousarray on varmap
-        cuda.memcpy_htod_async(self.invvar_gpu, np.ascontiguousarray(varmap, dtyp=np.float32), stream=self.dstreamer1)
+        cuda.memcpy_htod_async(self.invvar_gpu, np.ascontiguousarray(varmap, dtype=np.float32), stream=self.dstreamer1)
 
         # Take row convolutions
         self.rfunc_v(self.invvar_gpu, self.unif1v_gpu, self.filter1_gpu,
