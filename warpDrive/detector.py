@@ -216,12 +216,13 @@ class detector:
                      grid=(self.csize, 1), stream=self.dstreamer1)
 
         # FIXME: Check to see if removing the next line broke anything
+        # candPos should be rezero'd at the end of fitting
         # cuda.memcpy_htod_async(self.candCount_gpu, self.candCountZ, stream=self.dstreamer1)  #rezero the candidate count
 
         # Check at which points the smoothed frame is equal to the maximum filter of the smooth frame
         self.findpeaks(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.colsize, self.candCount_gpu,
                        self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount,
-                       block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.dstreamer1)
+                       block=(self.csize, 1, 1), grid=(self.rsize, 1), stream=self.dstreamer1)
 
         # retrieve number of candidates for block/grid allocation in fitting
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
