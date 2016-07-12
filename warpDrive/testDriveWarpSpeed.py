@@ -39,7 +39,8 @@ for ind in range(0, 10**stppwr):
     rawdat = np.ascontiguousarray(rawdat)
 
     _warpDrive.smoothFrame(rawdat)
-    _warpDrive.getCand(3.7, 16)
+    _warpDrive.getCand(0.1, 8)
+    print _warpDrive.candCount
     #_warpDrive.getCand(3.7, 16) #adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
     #_warpDrive.fitItSlow(18) #NOTE: need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
     t0 = time.time()

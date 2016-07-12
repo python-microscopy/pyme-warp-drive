@@ -77,7 +77,7 @@ int temp;
 
 //if ((unif[dloc] >= 0.99999999*maxfData[dloc]) && (unif[dloc] > thresh)){
 if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > thresh)){
-    if ((blockIdx.x>halfROIsize) && (blockDim.x - blockIdx.x > halfROIsize) && (threadIdx.x>halfROIsize) &&(colsize - threadIdx.x > halfROIsize)){
+    if ((blockIdx.x > (halfROIsize + 2)) && ((gridDim.x - blockIdx.x) > (halfROIsize + 2)) && (threadIdx.x > (halfROIsize + 2)) &&((colsize - threadIdx.x) > (halfROIsize + 2))){
         maxfData[dloc] = 1;
         temp = atomicAdd(counter, 1);
         if (*counter <= maxCandCount){

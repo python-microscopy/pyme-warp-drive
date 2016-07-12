@@ -124,6 +124,9 @@ class detector:
         self.LLH = np.zeros(self.maxCandCount, dtype=np.float32)
         self.LLH_gpu = cuda.mem_alloc(self.LLHZ.size*self.LLHZ.dtype.itemsize)
 
+        self.dummyPosChunk = np.zeros(self.fitChunkSize, dtype=np.int32)
+        self.candPosChunk_gpu = cuda.mem_alloc(self.dummyPosChunk.size*self.dummyPosChunk.dtype.itemsize)
+
 
     def prepvar(self, varmap, flatmap):
         """
@@ -239,27 +242,42 @@ class detector:
         """
         # Fixme: change function name to fitItToWinIt - also in fitfac
 
-        # Re-zero fit outputs
-        cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
-        cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
-        cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
+        #self.candPos = np.ascontiguousarray(8050*np.ones(800), dtype=np.int32)
 
+        cuda.memcpy_dtoh_async(self.candPos, self.candPos_gpu, stream=self.dstreamer1)
+        # plt.scatter(self.candPos[:self.candCount] % self.csize, self.candPos[:self.candCount] / self.csize)
+        # cuda.memcpy_htod_async(self.candPos_gpu, np.ascontiguousarray(self.candPos_gpu, dtype=np.int32),
+        #                        stream=self.dstreamer1)
+        self.candCount = np.sum(self.candPos>0)
+        #testCand = np.ascontiguousarray(self.candPos, dtype=np.int32)
+        #cuda.memcpy_htod(self.candPos_gpu, testCand)
+        #self.candCount = np.int32(len(testCand))
         # Loop through fitting all of our candidate molecules
         indy = 0
         while indy < self.candCount:
+            # Re-zero fit outputs
+            cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
+            cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
+            cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
+
             numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
 
+            cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=self.dstreamer1)
+
             # FIXME: test that removing ROIsize -> sz didn't break anything
+            #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(200),
+            #            self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
+            #            self.calcCRLB, self.candPosChunk_gpu, np.int32(self.rsize), np.int32(indy),# self.testROI_gpu,
+            #            block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
             self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(200),
-                        self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.candCount_gpu, self.invvar_gpu, self.gain_gpu,
-                        self.calcCRLB, self.candPos_gpu, np.int32(self.rsize), np.int32(indy),# self.testROI_gpu,
-                        block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
-            cuda.memcpy_dtoh_async(self.dpars[6*indy:6*int(indy + np.min([self.fitChunkSize, self.candCount - indy]))],
-                                   self.dpars_gpu, stream=self.dstreamer1)
-            cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*int(indy + np.min([self.fitChunkSize, self.candCount - indy]))],
-                                   self.CRLB_gpu, stream=self.dstreamer1)
-            cuda.memcpy_dtoh_async(self.LLH[indy:int(indy + np.min([self.fitChunkSize, self.candCount - indy]))],
-                                   self.LLH_gpu, stream=self.dstreamer1)
+                    self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
+                    self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0),# self.testROI_gpu,
+                    block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
+
+
+            cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=self.dstreamer1)
+            cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=self.dstreamer1)
+            cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
             indy += numBlock
 
         # reshape output for fitfactory
@@ -282,6 +300,15 @@ class detector:
         so the world knows not to do it.
         """
         self.context.pop()
+        return
+
+    def insertTestCandidates(self, testCand):
+        """
+        This function is only for testing. Allowing you to specify the candidate molecule positions in a scope with
+        cuda drivers present
+        """
+        cuda.memcpy_htod(self.candPos_gpu, testCand)
+        self.candCount = np.int32(len(testCand))
         return
 
 def normUnifFilter(siz):
