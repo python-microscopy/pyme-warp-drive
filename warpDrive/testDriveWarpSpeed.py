@@ -26,25 +26,21 @@ _warpDrive = detector(np.shape(rawdat), rawdat.dtype.itemsize, dfilter1, dfilter
 _warpDrive.allocateMem()
 _warpDrive.prepvar(varmap, gainmap)
 
-stppwr = 1
-#stppwr = 0
-print 10**stppwr
+stppwr = 0
+print 'Number of trials: %i' % 10**stppwr
 #cuda.start_profiler()
 
 
 telapsed = []
 for ind in range(0, 10**stppwr):
 
-
+    t0 = time.time()
     rawdat = np.ascontiguousarray(rawdat)
-
     _warpDrive.smoothFrame(rawdat)
     _warpDrive.getCand(3.7, 16)
-    print _warpDrive.candCount
     #_warpDrive.getCand(3.7, 16) #adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
     #_warpDrive.fitItSlow(18) #NOTE: need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
-    t0 = time.time()
-    _warpDrive.fitItSlow(18)
+    _warpDrive.fitItToWinIt()
     t1 = time.time()
     telapsed.append(t1-t0)
 

@@ -218,9 +218,9 @@ class detector:
         self.maxfcol(self.maxfData_gpu, self.colsize, self.halfMaxFilt, block=(self.rsize, 1, 1),
                      grid=(self.csize, 1), stream=self.dstreamer1)
 
-        # FIXME: Check to see if removing the next line broke anything
         # candPos should be rezero'd at the end of fitting
-        # cuda.memcpy_htod_async(self.candCount_gpu, self.candCountZ, stream=self.dstreamer1)  #rezero the candidate count
+        # FIXME: Check to see if removing the next line broke anything
+        cuda.memcpy_htod_async(self.candCount_gpu, self.candCountZ, stream=self.dstreamer1)  #rezero the candidate count
 
         # Check at which points the smoothed frame is equal to the maximum filter of the smooth frame
         self.findpeaks(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.colsize, self.candCount_gpu,
@@ -231,7 +231,7 @@ class detector:
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
 
 
-    def fitItSlow(self, ROISize=16):
+    def fitItToWinIt(self, ROISize=16):
         """
         This function runs David Baddeley's pixel-wise GPU fit, and is pretty darn fast. The fit is an MLE fit, with a
         noise-model which accounts for sCMOS statistics, i.e. a gaussian random variable (read-noise) added to a Poisson
@@ -240,7 +240,6 @@ class detector:
         To allow multiple processes to share the GPU, each proccess only fits 32 ROI's at a time (corresponding to 32
         candidate molecules)
         """
-        # Fixme: change function name to fitItToWinIt - also in fitfac
 
         #self.candPos = np.ascontiguousarray(8050*np.ones(800), dtype=np.int32)
 
