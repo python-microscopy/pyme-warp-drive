@@ -26,7 +26,7 @@ _warpDrive = detector(np.shape(rawdat), rawdat.dtype.itemsize, dfilter1, dfilter
 _warpDrive.allocateMem()
 _warpDrive.prepvar(varmap, gainmap)
 
-stppwr = 0
+stppwr = 1
 #stppwr = 0
 print 10**stppwr
 #cuda.start_profiler()
@@ -71,5 +71,6 @@ print _warpDrive.dpars.shape
 
 import matplotlib.pyplot as plt
 plt.imshow(rawdat)
-plt.scatter(_warpDrive.dpars[:_warpDrive.candCount, 0], _warpDrive.dpars[:_warpDrive.candCount, 1])
+plt.scatter(np.reshape(_warpDrive.dpars, (_warpDrive.maxCandCount, 6))[:_warpDrive.candCount, 0],
+            np.reshape(_warpDrive.dpars, (_warpDrive.maxCandCount, 6))[:_warpDrive.candCount, 1])
 plt.show()

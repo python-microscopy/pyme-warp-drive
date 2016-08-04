@@ -282,8 +282,8 @@ class detector:
 
         # fixme: problem with running this twice for the same fittask, as the array does not get reset to OG shape.
         # reshape output for fitfactory
-        self.dpars = np.reshape(self.dpars, (self.maxCandCount, 6))
-        self.CRLB = np.reshape(self.CRLB, (self.maxCandCount, 6))
+        #self.dpars = np.reshape(self.dpars, (self.maxCandCount, 6))
+        #self.CRLB = np.reshape(self.CRLB, (self.maxCandCount, 6))
 
         # uncomment if using testROI for dummy-checking:
         # cuda.memcpy_dtoh(self.testROI, self.testROI_gpu)
