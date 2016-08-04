@@ -248,7 +248,7 @@ class detector:
         # plt.scatter(self.candPos[:self.candCount] % self.csize, self.candPos[:self.candCount] / self.csize)
         # cuda.memcpy_htod_async(self.candPos_gpu, np.ascontiguousarray(self.candPos_gpu, dtype=np.int32),
         #                        stream=self.dstreamer1)
-        self.candCount = np.sum(self.candPos>0)
+        # self.candCount = np.sum(self.candPos>0).astype(np.int32)
         #testCand = np.ascontiguousarray(self.candPos, dtype=np.int32)
         #cuda.memcpy_htod(self.candPos_gpu, testCand)
         #self.candCount = np.int32(len(testCand))
@@ -280,6 +280,7 @@ class detector:
             cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
             indy += numBlock
 
+        # fixme: problem with running this twice for the same fittask, as the array does not get reset to OG shape.
         # reshape output for fitfactory
         self.dpars = np.reshape(self.dpars, (self.maxCandCount, 6))
         self.CRLB = np.reshape(self.CRLB, (self.maxCandCount, 6))
