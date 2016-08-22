@@ -270,7 +270,7 @@ __device__ void kernel_sum_reduce_dual(const int BlockSize, const int pixelIndex
 
 __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, int iterations,
         float *d_Parameters, float *d_CRLBs, float *d_LogLikelihood, float *d_varim, float *d_gainim, int calcCRB,
-        int *candPos, int numbCol, int candOff){ //, float *testROI)
+        int *candPos, int numbCol, int candOff){ //, float *testROI){
     /* A version of MLEFit that uses per-pixel, rather than per fit threads
 
     Each block consists corresponds to one ROI. threadIdx.x is the x pixel coordinate,

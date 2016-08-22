@@ -140,8 +140,7 @@ class detector:
         cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(flatmap, dtype=np.float32), stream=self.vstreamer2)
         cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.dstreamer1)
         cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.dstreamer1)
-        # FIXME: double check that AstigGaussGPUFitFR doesn't redundantly call ascontiguousarray on varmap
-        cuda.memcpy_htod_async(self.invvar_gpu, np.ascontiguousarray(varmap, dtype=np.float32), stream=self.dstreamer1)
+        cuda.memcpy_htod_async(self.invvar_gpu, np.ascontiguousarray(self.varmap, dtype=np.float32), stream=self.dstreamer1)
 
         # Take row convolutions
         self.rfunc_v(self.invvar_gpu, self.unif1v_gpu, self.filter1_gpu,
@@ -252,6 +251,10 @@ class detector:
         #cuda.memcpy_htod(self.candPos_gpu, testCand)
         #self.candCount = np.int32(len(testCand))
         # Loop through fitting all of our candidate molecules
+        #self.testROI = np.ascontiguousarray(np.zeros((ROISize, ROISize)), dtype=np.float32)
+        #self.testROI_gpu = cuda.mem_alloc(self.testROI.dtype.itemsize*self.testROI.size)
+
+
         indy = 0
         while indy < self.candCount:
             # Re-zero fit outputs
@@ -285,11 +288,10 @@ class detector:
         #self.CRLB = np.reshape(self.CRLB, (self.maxCandCount, 6))
 
         # uncomment if using testROI for dummy-checking:
-        # cuda.memcpy_dtoh(self.testROI, self.testROI_gpu)
-        # import matplotlib.pyplot as plt
-        # plt.imshow(self.testROI, interpolation='nearest')
-        # plt.scatter(self.dpars[0, 1], self.dpars[0, 0])
-        # plt.show()
+        #cuda.memcpy_dtoh(self.testROI, self.testROI_gpu)
+        #import matplotlib.pyplot as plt
+        #plt.imshow(self.testROI, interpolation='nearest')
+        #plt.show()
 
         return
 
@@ -307,8 +309,13 @@ class detector:
         This function is only for testing. Allowing you to specify the candidate molecule positions in a scope with
         cuda drivers present
         """
-        cuda.memcpy_htod(self.candPos_gpu, testCand)
-        self.candCount = np.int32(len(testCand))
+        cuda.memcpy_htod(self.candPos_gpu, np.ascontiguousarray(testCand, dtype=np.int32))
+        self.candCount = np.int32(len([testCand]))
+        return
+
+    def insertData(self, data):
+        self.data = np.ascontiguousarray(data, dtype=np.float32)
+        cuda.memcpy_htod(self.data_gpu, data)
         return
 
 def normUnifFilter(siz):
