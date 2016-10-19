@@ -61,6 +61,7 @@ class detector:
         # compile fit
         self.fitmod = gaussMLE_Fang_David()
         self.gaussAstig = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig")
+        self.gaussAstigBkgndSub = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig_subBkgnd")
 
         # print information about selected GPU
         print 'Name:', self.dev.name()
@@ -80,6 +81,7 @@ class detector:
         ###################### Allocate resources on GPU ######################
 
         self.data_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
+        self.bkgnd_gpu = cuda.mem_alloc(self.dsize)
         self.unif1_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.unif2_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.unif1v_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
@@ -230,7 +232,7 @@ class detector:
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
 
 
-    def fitItToWinIt(self, ROISize=16):
+    def fitItToWinIt(self, ROISize=16, dynamicBkgnd=None):
         """
         This function runs David Baddeley's pixel-wise GPU fit, and is pretty darn fast. The fit is an MLE fit, with a
         noise-model which accounts for sCMOS statistics, i.e. a gaussian random variable (read-noise) added to a Poisson
@@ -254,33 +256,51 @@ class detector:
         #self.testROI = np.ascontiguousarray(np.zeros((ROISize, ROISize)), dtype=np.float32)
         #self.testROI_gpu = cuda.mem_alloc(self.testROI.dtype.itemsize*self.testROI.size)
 
+        if not isinstance(dynamicBkgnd, type(None)):
+            cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(dynamicBkgnd, dtype=np.float32),
+                                   stream=self.dstreamer1)
+            indy = 0
+            while indy < self.candCount:
+                # Re-zero fit outputs
+                cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
+                cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
+                cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
 
-        indy = 0
-        while indy < self.candCount:
-            # Re-zero fit outputs
-            cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
-            cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
-            cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
+                numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
 
-            numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
+                cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=self.dstreamer1)
 
-            cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=self.dstreamer1)
-
-            # FIXME: test that removing ROIsize -> sz didn't break anything
-            #self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(200),
-            #            self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
-            #            self.calcCRLB, self.candPosChunk_gpu, np.int32(self.rsize), np.int32(indy),# self.testROI_gpu,
-            #            block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
-            self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(200),
-                    self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
-                    self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0),# self.testROI_gpu,
-                    block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
+                self.gaussAstigBkgndSub(self.data_gpu, np.float32(1.4), np.int32(200),
+                        self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
+                        self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0), self.bkgnd_gpu,  # self.testROI_gpu,
+                        block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
 
 
-            cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=self.dstreamer1)
-            cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=self.dstreamer1)
-            cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
-            indy += numBlock
+                cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=self.dstreamer1)
+                cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=self.dstreamer1)
+                cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
+                indy += numBlock
+        else:
+            indy = 0
+            while indy < self.candCount:
+                # Re-zero fit outputs
+                cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
+                cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
+                cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
+
+                numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
+
+                cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=self.dstreamer1)
+
+                self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(200),
+                        self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
+                        self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0),  # self.testROI_gpu,
+                        block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
+
+                cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=self.dstreamer1)
+                cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=self.dstreamer1)
+                cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
+                indy += numBlock
 
         # fixme: problem with running this twice for the same fittask, as the array does not get reset to OG shape.
         # reshape output for fitfactory
