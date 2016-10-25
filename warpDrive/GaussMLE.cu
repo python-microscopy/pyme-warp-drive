@@ -711,7 +711,7 @@ __global__ void kernel_MLEFit_pix_threads_astig_subBkgnd(float *d_data, float PS
     pixel_variance = d_varim[uplc + threadIdx.x + threadIdx.y*numbCol];
     pixel_gain = d_gainim[uplc + threadIdx.x + threadIdx.y*numbCol];
     pixel_bkgnd = d_bkgnd[uplc + threadIdx.x + threadIdx.y*numbCol];
-    pixel_data = (d_data[uplc + threadIdx.x + threadIdx.y*numbCol] + pixel_bkgnd)/pixel_gain;  //add back the dynamic background bit we took off during detection
+    pixel_data = (d_data[uplc + threadIdx.x + threadIdx.y*numbCol])/pixel_gain;  //add back the dynamic background bit we took off during detection
     //d_bkgnd is the average of the last x (~30) frames
 
 
@@ -849,7 +849,7 @@ __global__ void kernel_MLEFit_pix_threads_astig_subBkgnd(float *d_data, float PS
         PSFx=kernel_IntGauss1D(threadIdx.x, theta[0], theta[4]);
         PSFy=kernel_IntGauss1D(threadIdx.y, theta[1], theta[5]);
 
-        model=theta[3] + theta[2]*PSFx*PSFy + pixel_variance_over_gain_squared;
+        model=theta[3] + theta[2]*PSFx*PSFy + pixel_variance_over_gain_squared + pixel_bkgnd;
 
         //calculating derivatives
         //kernel_DerivativeIntGauss1D(threadIdx.x, theta[0], PSFSigma, theta[2], PSFy, &dudt[0], NULL);

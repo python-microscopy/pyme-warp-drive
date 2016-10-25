@@ -166,14 +166,20 @@ class detector:
         #cuda.memcpy_dtoh(self.dtarget, self.unif1v_gpu)
         #plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
 
-    def smoothFrame(self, photondat):
+    def smoothFrame(self, photondat, bkgnd=None):
         """
         smoothFrame passes a single frame of data to the GPU, and performs two 2D convolutions with different kernel
         sizes before subtracting the two. This is done in a variance-weighted fashion. For description, see supplemental
         materials of 10.1038/nmeth.2488.
         """
         # make sure that the data is contiguous
-        self.data = np.ascontiguousarray(photondat, dtype=np.float32)
+        self.data = np.ascontiguousarray(photondat, dtype=np.float32)  # fixme: totally pointless line
+        if not isinstance(bkgnd, type(None)):
+            self.rawD = np.ascontiguousarray(photondat, dtype=np.float32)
+            self.data = np.ascontiguousarray(photondat - bkgnd, dtype=np.float32)
+        else:
+            self.data = np.ascontiguousarray(photondat, dtype=np.float32)
+
         cuda.memcpy_htod_async(self.data_gpu, photondat, stream=self.dstreamer1)
 
         ############################# row convolutions ###################################
@@ -259,6 +265,8 @@ class detector:
         if not isinstance(dynamicBkgnd, type(None)):
             cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(dynamicBkgnd, dtype=np.float32),
                                    stream=self.dstreamer1)
+            cuda.memcpy_htod_async(self.data_gpu, np.ascontiguousarray(self.rawD, dtype=np.float32),
+                                   stream=self.dstreamer1)
             indy = 0
             while indy < self.candCount:
                 # Re-zero fit outputs
@@ -302,10 +310,6 @@ class detector:
                 cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
                 indy += numBlock
 
-        # fixme: problem with running this twice for the same fittask, as the array does not get reset to OG shape.
-        # reshape output for fitfactory
-        #self.dpars = np.reshape(self.dpars, (self.maxCandCount, 6))
-        #self.CRLB = np.reshape(self.CRLB, (self.maxCandCount, 6))
 
         # uncomment if using testROI for dummy-checking:
         #cuda.memcpy_dtoh(self.testROI, self.testROI_gpu)
