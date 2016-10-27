@@ -135,11 +135,18 @@ class detector:
         prepvar sends the variance and gain maps to the GPU, where they will remain. This function must be called before
         smoothFrame. When the FOV is shifted, this must be called again in order to update the camera maps held by the
         GPU.
+
+        Args:
+            varmap: variance map
+            flatmap: flatmap, i.e. 1/gain. The conversion from flatmap to gainmap is done in-line as it is sent to GPU
+
+        Returns:
+            nothing
         """
 
         self.varmap = varmap
         print(np.shape(varmap))  # varmap should have the same shape as the FOV being imaged
-        cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(flatmap, dtype=np.float32), stream=self.vstreamer2)
+        cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(1./flatmap, dtype=np.float32), stream=self.vstreamer2)
         cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.dstreamer1)
         cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.dstreamer1)
         cuda.memcpy_htod_async(self.invvar_gpu, np.ascontiguousarray(self.varmap, dtype=np.float32), stream=self.dstreamer1)
@@ -181,8 +188,15 @@ class detector:
 
         """
         # make sure that the data is contiguous, and subtract background if present
-        try:  # EAFP better than LBYL in python
+        if bkgnd is None:
+            self.data = np.ascontiguousarray(photondat, dtype=np.float32)
+            cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
+
+            # assign fit function for non-bkgnd subtraction case
+            self.fitFunc = self.gaussAstig
+        else:
             self.data = np.ascontiguousarray(photondat - bkgnd, dtype=np.float32)
+            cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
 
             # send bkgnd via stream 2 because in current implementation, bkgnd not needed again until fit
             cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(bkgnd, dtype=np.float32),
@@ -190,13 +204,9 @@ class detector:
 
             # if we make it to this point, we're ready to assign our fit function
             self.fitFunc = self.gaussAstigBkgndSub
-        except TypeError:
-            self.data = np.ascontiguousarray(photondat, dtype=np.float32)
 
-            # assign fit function for non-bkgnd subtraction case
-            self.fitFunc = self.gaussAstig
-
-        cuda.memcpy_htod_async(self.data_gpu, photondat, stream=self.dstreamer1)
+        # make sure that data is on the GPU before splitting row convolutions into two streams
+        self.dstreamer1.synchronize()  # Probably unnecessary, but good to play it safe
 
         ############################# row convolutions ###################################
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.gain_gpu, self.filter1_gpu,
