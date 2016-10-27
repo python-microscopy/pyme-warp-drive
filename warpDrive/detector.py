@@ -171,14 +171,30 @@ class detector:
         smoothFrame passes a single frame of data to the GPU, and performs two 2D convolutions with different kernel
         sizes before subtracting the two. This is done in a variance-weighted fashion. For description, see supplemental
         materials of 10.1038/nmeth.2488.
+
+        Args:
+            photondat:
+            bkgnd:
+
+        Returns:
+            nothing, but fit parameters are held (on both CPU and GPU) by detector instance
+
         """
-        # make sure that the data is contiguous
-        self.data = np.ascontiguousarray(photondat, dtype=np.float32)  # fixme: totally pointless line
-        if not isinstance(bkgnd, type(None)):
-            self.rawD = np.ascontiguousarray(photondat, dtype=np.float32)
+        # make sure that the data is contiguous, and subtract background if present
+        try:  # EAFP better than LBYL in python
             self.data = np.ascontiguousarray(photondat - bkgnd, dtype=np.float32)
-        else:
+
+            # send bkgnd via stream 2 because in current implementation, bkgnd not needed again until fit
+            cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(bkgnd, dtype=np.float32),
+                                   stream=self.dstreamer2)
+
+            # if we make it to this point, we're ready to assign our fit function
+            self.fitFunc = self.gaussAstigBkgndSub
+        except TypeError:
             self.data = np.ascontiguousarray(photondat, dtype=np.float32)
+
+            # assign fit function for non-bkgnd subtraction case
+            self.fitFunc = self.gaussAstig
 
         cuda.memcpy_htod_async(self.data_gpu, photondat, stream=self.dstreamer1)
 
@@ -238,7 +254,7 @@ class detector:
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
 
 
-    def fitItToWinIt(self, ROISize=16, dynamicBkgnd=None):
+    def fitItToWinIt(self, ROISize=16):
         """
         This function runs David Baddeley's pixel-wise GPU fit, and is pretty darn fast. The fit is an MLE fit, with a
         noise-model which accounts for sCMOS statistics, i.e. a gaussian random variable (read-noise) added to a Poisson
@@ -246,69 +262,40 @@ class detector:
 
         To allow multiple processes to share the GPU, each proccess only fits 32 ROI's at a time (corresponding to 32
         candidate molecules)
+
+        Args:
+            ROISize: Integer size of (square) subROI to be fit
+
+        Returns:
+            nothing, but fit parameters are held (on both CPU and GPU) by detector instance
+
         """
 
-        #self.candPos = np.ascontiguousarray(8050*np.ones(800), dtype=np.int32)
-
+        # Pull candidates back to host so we can insert them chunk by chunk into the fit
         cuda.memcpy_dtoh_async(self.candPos, self.candPos_gpu, stream=self.dstreamer1)
-        # plt.scatter(self.candPos[:self.candCount] % self.csize, self.candPos[:self.candCount] / self.csize)
-        # cuda.memcpy_htod_async(self.candPos_gpu, np.ascontiguousarray(self.candPos_gpu, dtype=np.int32),
-        #                        stream=self.dstreamer1)
-        # self.candCount = np.sum(self.candPos>0).astype(np.int32)
-        #testCand = np.ascontiguousarray(self.candPos, dtype=np.int32)
-        #cuda.memcpy_htod(self.candPos_gpu, testCand)
-        #self.candCount = np.int32(len(testCand))
-        # Loop through fitting all of our candidate molecules
-        #self.testROI = np.ascontiguousarray(np.zeros((ROISize, ROISize)), dtype=np.float32)
-        #self.testROI_gpu = cuda.mem_alloc(self.testROI.dtype.itemsize*self.testROI.size)
 
-        if not isinstance(dynamicBkgnd, type(None)):
-            cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(dynamicBkgnd, dtype=np.float32),
-                                   stream=self.dstreamer1)
-            cuda.memcpy_htod_async(self.data_gpu, np.ascontiguousarray(self.rawD, dtype=np.float32),
-                                   stream=self.dstreamer1)
-            indy = 0
-            while indy < self.candCount:
-                # Re-zero fit outputs
-                cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
-                cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
-                cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
+        indy = 0
+        while indy < self.candCount:
+            # Re-zero fit outputs
+            cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
+            cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
+            cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
 
-                numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
+            numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
 
-                cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=self.dstreamer1)
+            cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=self.dstreamer1)
 
-                self.gaussAstigBkgndSub(self.data_gpu, np.float32(1.4), np.int32(200),
-                        self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
-                        self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0), self.bkgnd_gpu,  # self.testROI_gpu,
-                        block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
+            # note that which fitFunc we use has already been decided by whether background was subtracted in detection
+            self.fitFunc(self.data_gpu, np.float32(1.4), np.int32(200),
+                    self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
+                    self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0), self.bkgnd_gpu,  # self.testROI_gpu,
+                    block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
 
 
-                cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=self.dstreamer1)
-                cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=self.dstreamer1)
-                cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
-                indy += numBlock
-        else:
-            indy = 0
-            while indy < self.candCount:
-                # Re-zero fit outputs
-                cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
-                cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
-                cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
-
-                numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
-
-                cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=self.dstreamer1)
-
-                self.gaussAstig(self.data_gpu, np.float32(1.4), np.int32(200),
-                        self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
-                        self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0),  # self.testROI_gpu,
-                        block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
-
-                cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=self.dstreamer1)
-                cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=self.dstreamer1)
-                cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
-                indy += numBlock
+            cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=self.dstreamer1)
+            cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=self.dstreamer1)
+            cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
+            indy += numBlock
 
 
         # uncomment if using testROI for dummy-checking:

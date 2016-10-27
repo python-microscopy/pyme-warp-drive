@@ -270,7 +270,7 @@ __device__ void kernel_sum_reduce_dual(const int BlockSize, const int pixelIndex
 
 __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, int iterations,
         float *d_Parameters, float *d_CRLBs, float *d_LogLikelihood, float *d_varim, float *d_gainim, int calcCRB,
-        int *candPos, int numbCol, int candOff){ //, float *testROI){
+        int *candPos, int numbCol, int candOff, float *d_bkgnd){ //, float *testROI){
     /* A version of MLEFit that uses per-pixel, rather than per fit threads
 
     Each block consists corresponds to one ROI. threadIdx.x is the x pixel coordinate,
@@ -280,6 +280,9 @@ __global__ void kernel_MLEFit_pix_threads_astig(float *d_data, float PSFSigma, i
     Feb 2016
     Modified to accept position list of candidate molecules and crop ROIs from data already present on GPU
     AESB Apr 2016
+
+    Note that d_bkgnd is not used in this kernel, however the placeholder is there to create symmetry in python between
+    this and the kernel with background subtraction
 
     */
 
@@ -711,7 +714,8 @@ __global__ void kernel_MLEFit_pix_threads_astig_subBkgnd(float *d_data, float PS
     pixel_variance = d_varim[uplc + threadIdx.x + threadIdx.y*numbCol];
     pixel_gain = d_gainim[uplc + threadIdx.x + threadIdx.y*numbCol];
     pixel_bkgnd = d_bkgnd[uplc + threadIdx.x + threadIdx.y*numbCol];
-    pixel_data = (d_data[uplc + threadIdx.x + threadIdx.y*numbCol])/pixel_gain;  //add back the dynamic background bit we took off during detection
+    //add back the dynamic background bit we took off during detection
+    pixel_data = (d_data[uplc + threadIdx.x + threadIdx.y*numbCol] + pixel_bkgnd)/pixel_gain;
     //d_bkgnd is the average of the last x (~30) frames
 
 
