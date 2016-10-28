@@ -132,7 +132,7 @@ class detector:
         self.candPosChunk_gpu = cuda.mem_alloc(self.dummyPosChunk.size*self.dummyPosChunk.dtype.itemsize)
 
 
-    def prepvar(self, varmap, flatmap):
+    def prepvar(self, varmap, flatmap, electronsPerCount):
         """
         prepvar sends the variance and gain maps to the GPU, where they will remain. This function must be called before
         smoothFrame. When the FOV is shifted, this must be called again in order to update the camera maps held by the
@@ -140,15 +140,19 @@ class detector:
 
         Args:
             varmap: variance map
-            flatmap: flatmap, i.e. 1/gain. The conversion from flatmap to gainmap is done in-line as it is sent to GPU
+            flatmap: flatmap, i.e. 1/gain. The conversion from flatmap to gainmap is done in-line as it is sent to GPU.
+                Note that PYME-style flatmaps are also normalized to one, so multiply 1/flatfield by electronsPercount
+                to get back to un-normalized gain.
 
         Returns:
             nothing
         """
 
         self.varmap = varmap
-        print(np.shape(varmap))  # varmap should have the same shape as the FOV being imaged
-        cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(1./flatmap, dtype=np.float32), stream=self.vstreamer2)
+
+        # note that PYME-style flatmaps are normalized to 1, so we need to convert it into a standard gain
+        cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(electronsPerCount/flatmap, dtype=np.float32), stream=self.vstreamer2)
+
         cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.dstreamer1)
         cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.dstreamer1)
         cuda.memcpy_htod_async(self.invvar_gpu, np.ascontiguousarray(self.varmap, dtype=np.float32), stream=self.dstreamer1)
