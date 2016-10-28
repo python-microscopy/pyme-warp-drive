@@ -68,8 +68,23 @@ __global__ void maxfColGPU(float *rconvdata, const int colsize, int halfFilt)
 }
 
 __global__ void findPeaks(float *unif, float *maxfData, float thresh, const int colsize,
-int *counter, int *candPos, const int halfROIsize, const int maxCandCount){
+int *counter, int *candPos, const int halfROIsize, const int maxCandCount, float *noiseSig){
+/*
 
+
+args:
+    unif:
+    maxfData:
+    thresh:
+    colsize:
+    counter:
+    candPos:
+    halfROIsize:
+    maxCandCount:
+    noiseSig: a dummy variable existing solely to create symmetry between this call and that of findPeaksSNThresh
+
+
+*/
 int dloc = blockIdx.x*colsize + threadIdx.x;
 int temp;
 
@@ -77,6 +92,42 @@ int temp;
 
 //if ((unif[dloc] >= 0.99999999*maxfData[dloc]) && (unif[dloc] > thresh)){
 if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > thresh)){
+    if ((blockIdx.x > (halfROIsize + 2)) && ((gridDim.x - blockIdx.x) > (halfROIsize + 2)) && (threadIdx.x > (halfROIsize + 2)) &&((colsize - threadIdx.x) > (halfROIsize + 2))){
+        maxfData[dloc] = 1;
+        temp = atomicAdd(counter, 1);
+        if (*counter <= maxCandCount){
+            candPos[temp] = dloc;
+        }
+
+    }
+
+}
+    else {
+        maxfData[dloc] = 0;
+    }
+
+
+}
+
+__global__ void findPeaksSNThresh(float *unif, float *maxfData, float thresh, const int colsize,
+int *counter, int *candPos, const int halfROIsize, const int maxCandCount, float *noiseSig){
+/*
+
+Same function as findPeaks except that a pixel-specific threshold is applied by taking the product of thresh and
+noiseSig inputs
+
+args:
+    thresh: multiple of noise sigma to reject molecules below
+    noiseSig: pixel-specific noise estimate to be multiplied by thresh to threshold based on signal to noise
+
+*/
+
+int dloc = blockIdx.x*colsize + threadIdx.x;
+int temp;
+float SNThresh = thresh*noiseSig[dloc];
+
+
+if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > SNThresh)){
     if ((blockIdx.x > (halfROIsize + 2)) && ((gridDim.x - blockIdx.x) > (halfROIsize + 2)) && (threadIdx.x > (halfROIsize + 2)) &&((colsize - threadIdx.x) > (halfROIsize + 2))){
         maxfData[dloc] = 1;
         temp = atomicAdd(counter, 1);

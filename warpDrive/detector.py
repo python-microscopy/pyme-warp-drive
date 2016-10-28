@@ -55,7 +55,8 @@ class detector:
         self.findmod = finderCompile()
         self.maxfrow = self.findmod.get_function("maxfRowGPU")
         self.maxfcol = self.findmod.get_function("maxfColGPU")
-        self.findpeaks = self.findmod.get_function("findPeaks")
+        self.findPeaks = self.findmod.get_function("findPeaks")
+        self.findPeaksSNThresh = self.findmod.get_function("findPeaksSNThresh")
 
 
         # compile fit
@@ -82,6 +83,7 @@ class detector:
 
         self.data_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.bkgnd_gpu = cuda.mem_alloc(self.dsize)
+        self.noiseSigma_gpu = cuda.mem_alloc(self.dsize)
         self.unif1_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.unif2_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.unif1v_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
@@ -234,7 +236,7 @@ class detector:
         # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in dstreamer1
 
 
-    def getCand(self, thresh=4, ROISize=16):
+    def getCand(self, thresh=4, ROISize=16, noiseSig=None):
         """
         getCand should only be called after smoothFrame. It performs a maximum filter on the smoothed image, then finds
         all points (farther than half-ROIsize away from the frame-border) at which the maximum filter is equal to the
@@ -255,10 +257,18 @@ class detector:
         # FIXME: Check to see if removing the next line broke anything
         cuda.memcpy_htod_async(self.candCount_gpu, self.candCountZ, stream=self.dstreamer1)  #rezero the candidate count
 
+        # determine whether to use simple threshold or pixel-dependent signal to noise threshold:
+        if noiseSig is None:
+            findFunc = self.findPeaks
+        else:
+            findFunc = self.findPeaksSNThresh
+            cuda.memcpy_htod_async(self.noiseSigma_gpu, np.ascontiguousarray(noiseSig.squeeze(), dtype=np.float32),
+                                   stream=self.dstreamer1)
+
         # Check at which points the smoothed frame is equal to the maximum filter of the smooth frame
-        self.findpeaks(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.colsize, self.candCount_gpu,
-                       self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount,
-                       block=(self.csize, 1, 1), grid=(self.rsize, 1), stream=self.dstreamer1)
+        findFunc(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.colsize, self.candCount_gpu,
+                   self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount, self.noiseSigma_gpu,
+                   block=(self.csize, 1, 1), grid=(self.rsize, 1), stream=self.dstreamer1)
 
         # retrieve number of candidates for block/grid allocation in fitting
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
