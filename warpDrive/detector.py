@@ -83,6 +83,8 @@ class detector:
 
         self.data_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.bkgnd_gpu = cuda.mem_alloc(self.dsize)
+        # fill background with zeros on gpu in case fitting without background subtraction is called
+        cuda.memcpy_htod(self.bkgnd_gpu, np.ascontiguousarray(np.zeros(self.dshape), dtype=np.float32))
         self.noiseSigma_gpu = cuda.mem_alloc(self.dsize)
         self.unif1_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.unif2_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
@@ -150,7 +152,7 @@ class detector:
 
         self.varmap = varmap
 
-        # note that PYME-style flatmaps are normalized to 1, so we need to convert it into a standard gain
+        # note that PYME-style flatmaps are [ADU] normalized to 1, which we need to convert to gain in [photons]
         cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(electronsPerCount/flatmap, dtype=np.float32), stream=self.vstreamer2)
 
         cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.dstreamer1)
@@ -186,41 +188,35 @@ class detector:
         materials of 10.1038/nmeth.2488.
 
         Args:
-            photondat:
-            bkgnd:
+            photondat: [ADU]
+            bkgnd: [ADU]
 
         Returns:
             nothing, but fit parameters are held (on both CPU and GPU) by detector instance
 
         """
-        # make sure that the data is contiguous, and subtract background if present
+        # make sure that the data is contiguous, and send to GPU
+        self.data = np.ascontiguousarray(photondat, dtype=np.float32)
+        cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
         if bkgnd is None:
-            self.data = np.ascontiguousarray(photondat, dtype=np.float32)
-            cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
+            # note that background array of zeros has already been sent to the GPU in allocateMem()
 
             # assign fit function for non-bkgnd subtraction case
             self.fitFunc = self.gaussAstig
         else:
-            self.data = np.ascontiguousarray(photondat - bkgnd, dtype=np.float32)
-            cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
-
-            # send bkgnd via stream 2 because in current implementation, bkgnd not needed again until fit
+            # send bkgnd via stream 1 because in current implementation, bkgnd is needed in row convolution
             cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(bkgnd, dtype=np.float32),
-                                   stream=self.dstreamer2)
-
-            # if we make it to this point, we're ready to assign our fit function
+                                   stream=self.dstreamer1)
+            # assign our fit function
             self.fitFunc = self.gaussAstigBkgndSub
-
-        # make sure that data is on the GPU before splitting row convolutions into two streams
-        self.dstreamer1.synchronize()  # Probably unnecessary, but good to play it safe
 
         ############################# row convolutions ###################################
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.gain_gpu, self.filter1_gpu,
-                   self.halfFiltBig, self.colsize, block=(self.csize, 1, 1),
+                   self.halfFiltBig, self.colsize, self.bkgnd_gpu, block=(self.csize, 1, 1),
                    grid=(self.rsize, 1), stream=self.dstreamer1)
 
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif2_gpu, self.gain_gpu, self.filter2_gpu,
-                   self.halfFiltSmall, self.colsize, block=(self.csize, 1, 1),
+                   self.halfFiltSmall, self.colsize, self.bkgnd_gpu, block=(self.csize, 1, 1),
                    grid=(self.rsize, 1), stream=self.dstreamer2)
 
         ############################# column convolutions ###################################

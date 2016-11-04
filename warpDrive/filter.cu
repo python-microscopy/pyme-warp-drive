@@ -108,17 +108,17 @@ Each row is loaded into shared memory before the convolution is performed.
 }
 
 __global__ void convRowGPU(float *data, float *var, float *rconvdata, float *gain, float *filter,// const int rowsize,
-int halfFilt, const int colsize)
+int halfFilt, const int colsize, float *bkgnd)
 /*
-This function takes input data and performs a row convolution. The convolution is stored in a separate
-output array.
+This function takes input data, subtracts the pixel-dependent background estimate, converts the data from units of ADU
+to photoelectrons and performs a row convolution. The convolution is stored in a separate output array.
 Each row is loaded into shared memory before the convolution is performed. Currently, the maximum size array that can
 be convolved by this function is 1024x1024, because each pixel is assigned its own thread.
 */
 {
     int k, halfFiltm1 = halfFilt-1;
-    int rid = blockIdx.x;// + halfFilt;
-    int j = threadIdx.x;// + halfFilt;
+    int rid = blockIdx.x;
+    int j = threadIdx.x;
     float tempsum = 0;
 
     volatile __shared__ float rdata_sh[1075]; //should be changed to colsize (PADDED SIZE, or larger)
@@ -130,8 +130,8 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
         rdata_sh[colsize + j + halfFilt] = 0;
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
     }
-    // load row of data into shared mem
-    rdata_sh[j + halfFilt] = data[rid*colsize + j]/(var[rid*colsize + j]*gain[rid*colsize + j]);
+    // load row of data into shared mem and subtract background
+    rdata_sh[j + halfFilt] = (data[rid*colsize + j] - bkgnd[rid*colsize + j])/(var[rid*colsize + j]*gain[rid*colsize + j]);
     if (j < (2*halfFilt)) filter_sh[j] = filter[j];
 
     // make sure we're ready to convolve

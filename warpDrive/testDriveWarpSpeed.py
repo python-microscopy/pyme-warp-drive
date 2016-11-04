@@ -3,7 +3,7 @@ import numpy as np
 import scipy.io
 import time
 
-def runTest(plotIt=False):
+def runTest(plotIt=False, subBkgnd=False, compare=False):
     '''Load data, gain, and variance from .mat files'''
     rawdat = np.ascontiguousarray(scipy.io.loadmat('TestData/imqd1_300.mat')['imqd1_300'], dtype=np.float32)
     #rawdat = rawdat.astype(np.float32)
@@ -33,17 +33,59 @@ def runTest(plotIt=False):
 
 
     telapsed = []
-    for ind in range(0, 10**stppwr):
+    if subBkgnd:
+        dummyBkgnd = np.ascontiguousarray(np.mean(rawdat)*np.ones_like(rawdat))
+        print('dummy background nonzero: %s' % np.any(dummyBkgnd))
+        for ind in range(0, 10**stppwr):
+            t0 = time.time()
+            rawdat = np.ascontiguousarray(rawdat)
+            _warpDrive.smoothFrame(rawdat, dummyBkgnd)
+            _warpDrive.getCand(3.7, 16)  # adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
+            _warpDrive.fitItToWinIt()  # : need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
+            t1 = time.time()
+            telapsed.append(t1-t0)
+    else:
+        for ind in range(0, 10**stppwr):
+            t0 = time.time()
+            rawdat = np.ascontiguousarray(rawdat)
+            _warpDrive.smoothFrame(rawdat)
+            _warpDrive.getCand(3.7, 16)
+            #_warpDrive.getCand(3.7, 16) #adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
+            #_warpDrive.fitItSlow(18) #NOTE: need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
+            _warpDrive.fitItToWinIt()
+            t1 = time.time()
+            telapsed.append(t1-t0)
 
-        t0 = time.time()
+    if compare:
+        dummyBkgnd = np.ascontiguousarray(np.ones_like(rawdat))
         rawdat = np.ascontiguousarray(rawdat)
+        _warpDrive.smoothFrame(rawdat, dummyBkgnd)
+        _warpDrive.getCand(3.7, 16)  # adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
+        _warpDrive.fitItToWinIt()  # : need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
+        dparsBk = np.copy(_warpDrive.dpars)
+        crlbBk = np.copy(_warpDrive.CRLB)
+        llhBk = np.copy(_warpDrive.LLH)
+
         _warpDrive.smoothFrame(rawdat)
-        _warpDrive.getCand(3.7, 16)
-        #_warpDrive.getCand(3.7, 16) #adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
-        #_warpDrive.fitItSlow(18) #NOTE: need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
+        _warpDrive.getCand(3.7, 16)  # adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
         _warpDrive.fitItToWinIt()
-        t1 = time.time()
-        telapsed.append(t1-t0)
+        dpars = np.copy(_warpDrive.dpars)
+        crlb = np.copy(_warpDrive.CRLB)
+        llh = np.copy(_warpDrive.LLH)
+
+        print np.array_equal(dparsBk, dpars)
+        print np.array_equal(crlbBk, crlb)
+        print np.array_equal(llhBk, llh)
+
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.hist(llh, edgecolor='red', facecolor='none', label='No background subtraction')
+        plt.hist(llhBk, edgecolor='blue', facecolor='none', linestyle='dashed', label='Background subtraction in detection and fit')
+        plt.legend(loc=2)
+        plt.xlabel('LLH')
+        plt.ylabel('Counts')
+        plt.show()
+
 
 
 
@@ -67,6 +109,7 @@ def runTest(plotIt=False):
     print _warpDrive.dpars.shape
     if plotIt:
         import matplotlib.pyplot as plt
+        plt.figure()
         plt.imshow(rawdat)
         plt.scatter(np.reshape(_warpDrive.dpars, (_warpDrive.maxCandCount, 6))[:_warpDrive.candCount, 0],
                     np.reshape(_warpDrive.dpars, (_warpDrive.maxCandCount, 6))[:_warpDrive.candCount, 1])
@@ -79,6 +122,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', dest='plotIt', action='store_true',
                         help='Plot results')
+    parser.add_argument('-b', dest='subBkgnd', action='store_true')  # note that the background being subtracted is fake
+    parser.add_argument('-c', dest='compare', action='store_true')  # compare bkgnd subtracted with non background subtracted
     args = parser.parse_args()
-    runTest(args.plotIt)
+    runTest(args.plotIt, args.subBkgnd, args.compare)
 
