@@ -142,9 +142,10 @@ class detector:
 
         Args:
             varmap: variance map
-            flatmap: flatmap, i.e. 1/gain. The conversion from flatmap to gainmap is done in-line as it is sent to GPU.
-                Note that PYME-style flatmaps are also normalized to one, so multiply 1/flatfield by electronsPercount
-                to get back to un-normalized gain.
+            flatmap: flatmap, i.e. (1/gain)/<1/gain>. The conversion from flatmap to gainmap is done in-line as it is
+                sent to GPU. Note that PYME-style flatmaps are also normalized to one, so use electronsPerCount to
+                convert to units of [ADU/e-]
+            electronsPerCount: [e-/ADU], i.e. <1/gain>
 
         Returns:
             nothing
@@ -152,8 +153,8 @@ class detector:
 
         self.varmap = varmap
 
-        # note that PYME-style flatmaps are [ADU] normalized to 1, which we need to convert to gain in [photons]
-        cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(electronsPerCount/flatmap, dtype=np.float32), stream=self.vstreamer2)
+        # note that PYME-style flatmaps are unitless, need to convert to gain in units of [ADU/e-]
+        cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(1./(electronsPerCount*flatmap), dtype=np.float32), stream=self.vstreamer1)
 
         cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.dstreamer1)
         cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.dstreamer1)
@@ -210,6 +211,9 @@ class detector:
             # assign our fit function
             self.fitFunc = self.gaussAstigBkgndSub
 
+        # make sure data is on the GPU before taking convolutions (otherwise dstreamer2 could potentially fire too soon)
+        self.dstreamer1.synchronize()
+
         ############################# row convolutions ###################################
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.gain_gpu, self.filter1_gpu,
                    self.halfFiltBig, self.colsize, self.bkgnd_gpu, block=(self.csize, 1, 1),
@@ -236,7 +240,7 @@ class detector:
         # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in dstreamer1
 
 
-    def getCand(self, thresh=4, ROISize=16, noiseSig=None):
+    def getCand(self, thresh=4, ROISize=16, noiseSig=None, ePerADU=1.0):
         """
         getCand should only be called after smoothFrame. It performs a maximum filter on the smoothed image, then finds
         all points (farther than half-ROIsize away from the frame-border) at which the maximum filter is equal to the
@@ -261,13 +265,13 @@ class detector:
         if noiseSig is None:
             findFunc = self.findPeaks
         else:
-            findFunc = self.findPeaksSNThresh
             cuda.memcpy_htod_async(self.noiseSigma_gpu, np.ascontiguousarray(noiseSig.squeeze(), dtype=np.float32),
                                    stream=self.dstreamer1)
+            findFunc = self.findPeaksSNThresh
 
         # Check at which points the smoothed frame is equal to the maximum filter of the smooth frame
         findFunc(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.colsize, self.candCount_gpu,
-                   self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount, self.noiseSigma_gpu,
+                   self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount, self.noiseSigma_gpu, np.float32(ePerADU),
                    block=(self.csize, 1, 1), grid=(self.rsize, 1), stream=self.dstreamer1)
 
         # retrieve number of candidates for block/grid allocation in fitting

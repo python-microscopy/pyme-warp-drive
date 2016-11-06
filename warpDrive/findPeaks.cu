@@ -67,8 +67,8 @@ __global__ void maxfColGPU(float *rconvdata, const int colsize, int halfFilt)
 
 }
 
-__global__ void findPeaks(float *unif, float *maxfData, float thresh, const int colsize,
-int *counter, int *candPos, const int halfROIsize, const int maxCandCount, float *noiseSig){
+__global__ void findPeaks(float *unif, float *maxfData, float thresh, const int colsize, int *counter, int *candPos,
+const int halfROIsize, const int maxCandCount, float *noiseSig, const float electronsPerADU){
 /*
 
 
@@ -82,6 +82,7 @@ args:
     halfROIsize:
     maxCandCount:
     noiseSig: a dummy variable existing solely to create symmetry between this call and that of findPeaksSNThresh
+    electronsPerADU: a dummy variable existing solely to create symmetry between this call and that of findPeaksSNThresh
 
 
 */
@@ -109,8 +110,8 @@ if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > thresh)){
 
 }
 
-__global__ void findPeaksSNThresh(float *unif, float *maxfData, float thresh, const int colsize,
-int *counter, int *candPos, const int halfROIsize, const int maxCandCount, float *noiseSig){
+__global__ void findPeaksSNThresh(float *unif, float *maxfData, float thresh, const int colsize, int *counter,
+int *candPos, const int halfROIsize, const int maxCandCount, float *noiseSig, const float electronsPerADU){
 /*
 
 Same function as findPeaks except that a pixel-specific threshold is applied by taking the product of thresh and
@@ -119,12 +120,14 @@ noiseSig inputs
 args:
     thresh: multiple of noise sigma to reject molecules below
     noiseSig: pixel-specific noise estimate to be multiplied by thresh to threshold based on signal to noise
+    electronsPerADU: conversion factor going from [ADU] to [e-], calculated via 1/<gain map [ADU/e-]>
 
 */
 
 int dloc = blockIdx.x*colsize + threadIdx.x;
 int temp;
-float SNThresh = thresh*noiseSig[dloc];
+// convert threshold from [ADU] to [e-] and scale by thresh factor
+float SNThresh = thresh*noiseSig[dloc]*electronsPerADU;
 
 
 if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > SNThresh)){

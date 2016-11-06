@@ -3,6 +3,7 @@ import numpy as np
 import scipy.io
 import time
 
+#FIXME: test script has not been updated since introducing background subtraction and SNR-based thresholding
 def runTest(plotIt=False, subBkgnd=False, compare=False):
     '''Load data, gain, and variance from .mat files'''
     rawdat = np.ascontiguousarray(scipy.io.loadmat('TestData/imqd1_300.mat')['imqd1_300'], dtype=np.float32)
