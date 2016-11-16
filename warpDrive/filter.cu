@@ -30,6 +30,9 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
         rdata_sh[colsize + j + halfFilt] = 0;
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
     }
+    if ((j == (halfFilt-1)) and (rid == 1)){
+        printf("For Gondor!!");
+    }
     // load row of data into shared mem and weight on variance
     rdata_sh[j + halfFilt] = 1/var[rid*colsize + j];
 
