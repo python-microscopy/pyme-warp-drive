@@ -150,7 +150,9 @@ class detector:
         Returns:
             nothing
         """
-
+        print('Variance map: mu = %f +- %f' % (np.mean(varmap), np.std(varmap)))
+        print('Flatfield map: mu = %f +- %f' % (np.mean(flatmap), np.std(flatmap)))
+        print('ElectronsPerCount: %f' % electronsPerCount)
         self.varmap = varmap
 
         # note that PYME-style flatmaps are unitless, need to convert to gain in units of [ADU/e-]
@@ -196,6 +198,8 @@ class detector:
             nothing, but fit parameters are held (on both CPU and GPU) by detector instance
 
         """
+        print('Data: mu = %f +- %f' % (np.mean(photondat), np.std(photondat)))
+        print('Background: %s' % (bkgnd is None))
         # make sure that the data is contiguous, and send to GPU
         self.data = np.ascontiguousarray(photondat, dtype=np.float32)
         cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
@@ -205,6 +209,7 @@ class detector:
             # assign fit function for non-bkgnd subtraction case
             self.fitFunc = self.gaussAstig
         else:
+            print('Background: mu = %f +- %f' % (np.mean(bkgnd), np.std(bkgnd)))
             # send bkgnd via stream 1 because in current implementation, bkgnd is needed in row convolution
             cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(bkgnd, dtype=np.float32),
                                    stream=self.dstreamer1)
