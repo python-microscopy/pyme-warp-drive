@@ -15,22 +15,14 @@ from detector_cu import *
 
 class detector:
 
-    def __init__(self, dshape, ditemsize, dfilterBig, dfilterSmall):
+    def __init__(self, dfilterBig, dfilterSmall):
         """
         Initialize PyCUDA and compile CUDA functions. All CUDA functions will be run in the default context
         in several streams initialized here.
         """
-        self.dshape = dshape
-        self.dsize = dshape[0] * dshape[1] *ditemsize
+
         self.dfilterBig = dfilterBig
         self.dfilterSmall = dfilterSmall
-
-
-        self.rowsize = np.int32(self.dshape[0])  # integers must be passed to PyCUDA functions as int32's
-        self.colsize = np.int32(self.dshape[1])
-        self.rsize = int(self.rowsize)  # need integer type for block/grid size definitions
-        self.csize = int(self.colsize)
-
         self.halfFiltBig = np.int32(0.5*len(self.dfilterBig))
         self.halfFiltSmall = np.int32(0.5*len(self.dfilterSmall))
 
@@ -74,10 +66,19 @@ class detector:
         #sharedinfo = self.context.get_shared_config()
         #print sharedinfo
 
-    def allocateMem(self):
+    def allocateMem(self, dshape, ditemsize):
         """
         Allocate memory on the GPU. These allocations will be held until the detector object is destroyed.
         """
+
+        self.dshape = dshape
+        self.dsize = dshape[0] * dshape[1] * ditemsize
+
+        self.rowsize = np.int32(self.dshape[0])  # integers must be passed to PyCUDA functions as int32's
+        self.colsize = np.int32(self.dshape[1])
+        self.rsize = int(self.rowsize)  # need integer type for block/grid size definitions
+        self.csize = int(self.colsize)
+
 
         ###################### Allocate resources on GPU ######################
 
