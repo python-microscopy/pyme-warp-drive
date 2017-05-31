@@ -3,7 +3,6 @@ import numpy as np
 import scipy.io
 import time
 
-#FIXME: test script has not been updated since introducing background subtraction and SNR-based thresholding
 def runTest(plotIt=False, subBkgnd=False, compare=False):
     '''Load data, gain, and variance from .mat files'''
     rawdat = np.ascontiguousarray(scipy.io.loadmat('TestData/imqd1_300.mat')['imqd1_300'], dtype=np.float32)
@@ -11,6 +10,12 @@ def runTest(plotIt=False, subBkgnd=False, compare=False):
     #varmap = np.ascontiguousarray(scipy.io.loadmat('/home/aeb85/PycharmProjects/candidatedetection/TiffsForMatlabPyCUDAcomparison/quadrant1/LargeKernel_12pix/varmap.mat')['varmap'][:,:,299], dtype=np.float32)
     varmap = np.ascontiguousarray(scipy.io.loadmat('TestData/varmap.mat')['varmap'], dtype=np.float32)
     gainmap = np.ascontiguousarray(scipy.io.loadmat('TestData/gainim.mat')['gainim'], dtype=np.float32)
+    # spoof a flatmap
+    electronsPerCount = 1. / np.mean(gainmap)
+    # note that PYME-style flatmaps are unitless, whereas in Fang's sCMOS calibration, gain is in units of [ADU/e-]
+    flatmap = 1./((gainmap / gainmap.mean()))
+    # gainmap = 1./(electronsPerCount*flatmap)
+
     rawdat = rawdat*gainmap
 
     halfFilt = np.int32(6) #set half of the filter size
@@ -23,10 +28,10 @@ def runTest(plotIt=False, subBkgnd=False, compare=False):
 
 
     '''Generate warpDrive'''
-    _warpDrive = detector(np.shape(rawdat), rawdat.dtype.itemsize, dfilter1, dfilter2)
+    _warpDrive = detector(dfilter1, dfilter2)
 
-    _warpDrive.allocateMem()
-    _warpDrive.prepvar(varmap, gainmap)
+    _warpDrive.allocateMem(np.shape(rawdat), rawdat.dtype.itemsize)
+    _warpDrive.prepvar(varmap, flatmap, electronsPerCount)
 
     stppwr = 0
     print 'Number of trials: %i' % 10**stppwr
