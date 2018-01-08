@@ -61,7 +61,7 @@ class Buffer(object):
 
                 thrust::sort(thrust::device, to_sort, to_sort + 30);
 
-                printf("test_val is %f", to_sort[n]);
+                //printf("test_val is %f", to_sort[n]);
 
                 // should not need to sync threads
                 nth_values[threadIdx.y + threadIdx.x * blockDim.y] = to_sort[n];
@@ -167,6 +167,35 @@ class Buffer(object):
             return self.cur_bg
 
 
+class SimpleBuffer_CPU(object):
+    def __init__(self, data_buffer, percentile=0.25, buffer_length=30):
+        self.data_buffer = data_buffer
+        self.percentile = percentile
+        self.buffer_length=buffer_length
+
+        self.slice_shape = self.data_buffer.getSliceShape()
+
+        self.frames = np.empty((self.slice_shape[0], self.slice_shape[1], self.buffer_length))
+
+        self.cur_frames = set()
+        self.cur_bg = None
+
+        self.index_of_interest = round(percentile * g_buf.buffer_length)
+
+    def getBackground(self, bg_indices):
+        if bg_indices == self.cur_frames:
+            return self.cur_bg
+        else:
+            for fi in range(g_buf.buffer_length):
+                cpu_buffer[:, :, fi] = ds.getSlice(fi)
+
+            cpu_sorted = np.sort(cpu_buffer, axis=2)
+
+            self.cur_bg = cpu_sorted[:,:,index_of_interest]
+
+            return self.cur_bg
+
+
 if __name__ == '__main__':
     from PYME.IO.DataSources.RandomDataSource import DataSource
     percentile = 0.25
@@ -203,3 +232,43 @@ if __name__ == '__main__':
     # get_percentile(frames_gpu, np.int32(n_to_grab), output, block=(pix_x, pix_y, 1))
     # cuda.memcpy_dtoh(test, output)
     # print(test)
+    benchmark = False
+    if benchmark:
+        import timeit
+        setup_script = """
+        from PYME.IO.DataSources.RandomDataSource import DataSource
+        from warpDrive.buffers import Buffer
+        
+        percentile = 0.25
+        # run a test
+        imsz = 3
+        ds = DataSource(imsz, imsz, 100)
+        g_buf = Buffer(ds, percentile=percentile)
+        indices = set(range(30))
+        """
+        timeit.timeit('g_buf.getBackground(indices)', setup=setup_script, number=1000)
+
+
+
+
+        setup_cpu = """
+        class buff(object):
+            pass
+        
+        from PYME.IO.DataSources.RandomDataSource import DataSource
+        
+        percentile = 0.25
+        # run a test
+        imsz = 3
+        ds = DataSource(imsz, imsz, 100)
+        
+        dbuff = buff()
+        dbuff.dataSource = ds
+        
+        dbuff.getSlice = ds.getSlice
+        from PYME.IO.buffers import backgroundBufferM
+        c_buf = backgroundBufferM(dbuff, percentile=percentile)
+        indices = set(range(30))
+        """
+
+        timeit.timeit('c_buf.getBackground(indices)', setup=setup_cpu, number=1000)
