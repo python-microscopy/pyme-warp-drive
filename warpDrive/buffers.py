@@ -17,7 +17,7 @@ class Buffer(object):
         self.cur_positions = {}
         self.available = range(buffer_length)
 
-        self.slice_shape = self.data_buffer.getSliceShape()
+        self.slice_shape = self.data_buffer.dataSource.getSliceShape()
 
         #---- allocate memory
         pix_r, pix_c = self.slice_shape
@@ -46,7 +46,8 @@ class Buffer(object):
 
             __global__ void nth_value_by_pixel(float *frames, const int n, float *nth_values)
             /*
-                To be called with block dim: (image.shape[0], image.shape[1], 1)
+                Maximum of 1040 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)
+                Outdated: To be called with block dim: (image.shape[0], image.shape[1], 1)
             */
             {
                 int data_loc;
@@ -54,7 +55,11 @@ class Buffer(object):
 
                 for (int ind = 0; ind < 30; ind++){
                     // row-major 3D index the same pixel in depth (fastest changing)
-                    data_loc = ind + 30 * (threadIdx.y + blockDim.y * threadIdx.x); 
+                    //data_loc = ind + 30 * (threadIdx.y + blockDim.y * threadIdx.x);
+                    data_loc = ind + 30 * (blockIdx.x + gridDim.x * threadIdx.x);  
+                    
+                    //frames[data_loc] = new_frame[threadIdx.y + threadIdx.x * blockDim.y];
+                    //frames[data_loc] = new_frame[blockIdx.x + threadIdx.x * gridDim.x];
 
                     to_sort[ind] = frames[data_loc];
                 }
@@ -64,7 +69,8 @@ class Buffer(object):
                 //printf("test_val is %f", to_sort[n]);
 
                 // should not need to sync threads
-                nth_values[threadIdx.y + threadIdx.x * blockDim.y] = to_sort[n];
+                //nth_values[threadIdx.y + threadIdx.x * blockDim.y] = to_sort[n];
+                nth_values[blockIdx.x + threadIdx.x * gridDim.x] = to_sort[n];
             }
             
             __global__ void clear_frames(float *frames, int *frame_nums)
@@ -83,16 +89,19 @@ class Buffer(object):
             
             __global__ void update_frame(float *frames, float *new_frame, const int frame_num)
             /*
-                To be called with block dim: (image.shape[0], image.shape[1], 1)
+                Maximum of 1040 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)
+                Outdated: To be called with block dim: (image.shape[0], image.shape[1], 1)
             */
             {
                 int data_loc;
 
                 // row-major 3D index the same pixel in depth (fastest changing)
-                data_loc = frame_num + 30 * (threadIdx.y + blockDim.y * threadIdx.x); 
+                //data_loc = frame_num + 30 * (threadIdx.y + blockDim.y * threadIdx.x);
+                data_loc = frame_num + 30 * (blockIdx.x + gridDim.x * threadIdx.x);  
                 
                 // replace value with new frame value
-                frames[data_loc] = new_frame[threadIdx.y + threadIdx.x * blockDim.y];
+                //frames[data_loc] = new_frame[threadIdx.y + threadIdx.x * blockDim.y];
+                frames[data_loc] = new_frame[blockIdx.x + threadIdx.x * gridDim.x];
             }
             
             }
@@ -103,11 +112,10 @@ class Buffer(object):
 
     def update(self, frame, position):
         # send new frame to GPU
-        cuda.memcpy_htod(self.new_frame_gpu, self.data_buffer.getSlice(frame).astype(np.float32))
-
+        cuda.memcpy_htod(self.new_frame_gpu, self.data_buffer.dataSource.getSlice(frame).astype(np.float32))
         # update the frame buffer on the GPU
         self.update_frame(self.frames_gpu, self.new_frame_gpu, position,
-                          block=(self.slice_shape[0], self.slice_shape[1], 1))
+                          block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1))
 
         # update position dict
         self.cur_positions[frame] = position
@@ -150,6 +158,7 @@ class Buffer(object):
         self.cur_frames = bg_indices  # at this point, we've added all the new frames and removed all the outdated ones
 
     def getBackground(self, bg_indices):
+        bg_indices = set(bg_indices)
         if bg_indices == self.cur_frames:
             return self.cur_bg
         else:
@@ -159,7 +168,7 @@ class Buffer(object):
             n = round(self.percentile * len(bg_indices))
 
             self.nth_value_by_pixel(self.frames_gpu, np.int32(n), self.cur_bg_gpu,
-                                    block=(self.slice_shape[0], self.slice_shape[1], 1))
+                                    block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1))
 
             # copy value back to host
             cuda.memcpy_dtoh(self.cur_bg, self.cur_bg_gpu)
@@ -173,7 +182,7 @@ class SimpleBuffer_CPU(object):
         self.percentile = percentile
         self.buffer_length=buffer_length
 
-        self.slice_shape = self.data_buffer.getSliceShape()
+        self.slice_shape = self.data_buffer.dataSource.getSliceShape()
 
         self.frames = np.empty((self.slice_shape[0], self.slice_shape[1], self.buffer_length))
 
@@ -196,20 +205,24 @@ class SimpleBuffer_CPU(object):
             return self.cur_bg
 
 
+class dbuff(object):
+    pass
+
 if __name__ == '__main__':
     from PYME.IO.DataSources.RandomDataSource import DataSource
     percentile = 0.25
     # run a test
     imsz = 3
     ds = DataSource(imsz, imsz, 100)
-    g_buf = Buffer(ds, percentile=percentile)
+    dbuff.dataSource = ds
+    g_buf = Buffer(dbuff, percentile=percentile)
 
     bg_gpu = g_buf.getBackground(set(range(30)))
 
     # check if this is also what the CPU gets
     cpu_buffer = np.empty((imsz, imsz, g_buf.buffer_length))
     for fi in range(g_buf.buffer_length):
-        cpu_buffer[:,:,fi] = ds.getSlice(fi)
+        cpu_buffer[:,:,fi] = dbuff.dataSource.getSlice(fi)
     cpu_sorted = np.sort(cpu_buffer, axis=2)
     index_of_interest = round(percentile*g_buf.buffer_length)
     bg_cpu = cpu_sorted[:,:,index_of_interest]
