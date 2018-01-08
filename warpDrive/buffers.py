@@ -169,12 +169,26 @@ class Buffer(object):
 
 if __name__ == '__main__':
     from PYME.IO.DataSources.RandomDataSource import DataSource
-
+    percentile = 0.25
     # run a test
-    ds = DataSource(3, 3, 100)
-    g_buf = Buffer(ds)
+    imsz = 3
+    ds = DataSource(imsz, imsz, 100)
+    g_buf = Buffer(ds, percentile=percentile)
 
-    g_buf.getBackground(set(range(30)))
+    bg_gpu = g_buf.getBackground(set(range(30)))
+
+    # check if this is also what the CPU gets
+    cpu_buffer = np.empty((imsz, imsz, g_buf.buffer_length))
+    for fi in range(g_buf.buffer_length):
+        cpu_buffer[:,:,fi] = ds.getSlice(fi)
+    cpu_sorted = np.sort(cpu_buffer, axis=2)
+    index_of_interest = round(percentile*g_buf.buffer_length)
+    bg_cpu = cpu_sorted[:,:,index_of_interest]
+
+    success = np.array_equal(bg_cpu, bg_gpu)
+    print('test passed: %r' % success)
+
+
 
 
 
