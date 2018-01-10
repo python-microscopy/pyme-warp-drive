@@ -34,6 +34,7 @@ class Buffer(object):
         self.new_frame_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
 
         #---- compile
+        print('compiling!\n')
         self.compile()
 
     def compile(self):
@@ -42,11 +43,49 @@ class Buffer(object):
 
 
             extern "C" { // extern C required for PyCUDA to find our functions
-
-
+            
+            __device__ int partition(float *array, int p, int r)
+            /*
+            Based on Introduction to Algorithms, 3rd edition, ISBN: 0-262-03384-4
+            */
+            {
+                int ii, jj;
+                float temp, x;
+                x = array[r];
+                ii = p - 1;
+                for (jj=p; jj<=r-1; jj++){
+                    if (array[jj]<= x){
+                        ii += 1;
+                        temp = array[jj];
+                        array[jj] = array[ii];
+                        array[ii] = temp;
+                    }
+                }
+                
+                if (array[r] < array[ii + 1]){
+                    temp = array[ii + 1];
+                    array[ii + 1] = array[r];
+                    array[r] = temp;
+                }
+                
+                return (ii + 1);
+            }
+            
+            __device__ void quicksort(float *array, int p, int r)
+            /*
+            Based on Introduction to Algorithms, 3rd edition, ISBN: 0-262-03384-4
+            */
+            {
+                if (p < r){
+                    int pivot = partition(array, p, r);
+                    quicksort(array, p, pivot-1);
+                    quicksort(array, pivot + 1, r);
+                }
+            }
+           
             __global__ void nth_value_by_pixel(float *frames, const int n, float *nth_values)
             /*
-                Maximum of 1040 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)
+                Maximum of 1024 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)
                 Outdated: To be called with block dim: (image.shape[0], image.shape[1], 1)
             */
             {
@@ -64,7 +103,8 @@ class Buffer(object):
                     to_sort[ind] = frames[data_loc];
                 }
 
-                thrust::sort(thrust::device, to_sort, to_sort + 30);
+                //thrust::sort(thrust::device, to_sort, to_sort + 30);
+                quicksort(to_sort, 0, 29);
 
                 //printf("test_val is %f", to_sort[n]);
 
@@ -89,7 +129,7 @@ class Buffer(object):
             
             __global__ void update_frame(float *frames, float *new_frame, const int frame_num)
             /*
-                Maximum of 1040 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)
+                Maximum of 1024 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)
                 Outdated: To be called with block dim: (image.shape[0], image.shape[1], 1)
             */
             {
@@ -212,7 +252,7 @@ if __name__ == '__main__':
     from PYME.IO.DataSources.RandomDataSource import DataSource
     percentile = 0.25
     # run a test
-    imsz = 3
+    imsz= 1024
     ds = DataSource(imsz, imsz, 100)
     dbuff.dataSource = ds
     g_buf = Buffer(dbuff, percentile=percentile)
@@ -249,6 +289,9 @@ if __name__ == '__main__':
     if benchmark:
         import timeit
         setup_script = """
+        class buff(object):
+            pass
+        
         from PYME.IO.DataSources.RandomDataSource import DataSource
         from warpDrive.buffers import Buffer
         
@@ -256,7 +299,8 @@ if __name__ == '__main__':
         # run a test
         imsz = 3
         ds = DataSource(imsz, imsz, 100)
-        g_buf = Buffer(ds, percentile=percentile)
+        buff.dataSource = ds
+        g_buf = Buffer(buff, percentile=percentile)
         indices = set(range(30))
         """
         timeit.timeit('g_buf.getBackground(indices)', setup=setup_script, number=1000)
