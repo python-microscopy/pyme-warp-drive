@@ -8,7 +8,7 @@ from pycuda.compiler import SourceModule
 
 
 class Buffer(object):
-    def __init__(self, data_buffer, percentile=0.25, buffer_length=30):
+    def __init__(self, data_buffer, percentile=0.25, buffer_length=30, threads_per_block_in_sort=64):
         self.data_buffer = data_buffer
         self.buffer_length = buffer_length
         self.percentile = percentile
@@ -32,6 +32,16 @@ class Buffer(object):
         self.to_wipe_gpu = cuda.mem_alloc(self.to_wipe.size * self.to_wipe.dtype.itemsize)
 
         self.new_frame_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
+
+        # get info about selected GPU
+        self.gpu_info = pycuda.tools.DeviceData()
+
+        self.threads_per_block_in_sort = threads_per_block_in_sort
+        # determine how many warps can fit for our given buffer length
+        shared_mem_per_block = self.frames.itemsize * threads_per_block_in_sort * buffer_length
+        # print 'Shared Memory size:', info.shared_memory
+        # print 'Blocks per MP:', info.thread_blocks_per_mp
+        # print 'MP count:', self.dev.multiprocessor_count
 
         #---- compile
         print('compiling!\n')
@@ -113,6 +123,47 @@ class Buffer(object):
                 nth_values[blockIdx.x + threadIdx.x * gridDim.x] = to_sort[n];
             }
             
+             __global__ void nth_value_by_pixel_shared_quicksort(float *frames, const int n, float *nth_values)
+            /*
+                To be executed with one warp per block (32 threads)
+                block=(32, 1, 1), grid=(warp_count_x, slice_shape[1])
+            */
+            {
+                int data_loc;
+                int shared_offset = 30 * threadIdx.x;
+                int dim0_pixel = blockDim.x * blockIdx.x + threadIdx.x;
+                
+                extern __shared__ float to_sort[];  // will be 32 * buffer length (i.e. blockDim.x * buffer_length)
+                
+                //FIXME - need an if statement in case slice_shape[0] % 32 != 0
+                
+                
+                //if ((threadIdx.x == 5) & (blockIdx.x == 4) & (blockIdx.y == 3)){
+                //    printf("pixel0 is %d", dim0_pixel);
+                //    printf("/n data_loc0 is %d", 30*(blockIdx.y + gridDim.y * dim0_pixel));
+                //}
+
+                for (int ind = 0; ind < 30; ind++){
+                    // row-major 3D index the same pixel in depth (fastest changing)
+                    // data_loc = ind3 + dim3 * (ind2 + dim2 * ind1)
+                    // data_loc = ind + 30 * (blockIdx.x + gridDim.x * threadIdx.x);
+                    data_loc = ind + 30 * (blockIdx.y + gridDim.y * dim0_pixel);  
+                    
+                    // recall that to_sort is a per-block variable
+                    to_sort[shared_offset + ind] = frames[data_loc];
+                }
+                // recall that to_sort is a per-block variable
+                quicksort(to_sort, shared_offset, shared_offset + 29);
+
+                //printf("test_val is %f", to_sort[n]);
+
+                // should not need to sync threads
+                
+                // nth_values is flattened 2D
+                // nth_values[blockIdx.x + threadIdx.x * gridDim.x] = to_sort[n];
+                nth_values[blockIdx.y + gridDim.y * dim0_pixel] = to_sort[shared_offset + n];
+            }
+            
             __global__ void clear_frames(float *frames, int *frame_nums)
             /*
                 To be called with block dim: (image.shape[0], image.shape[1], len(frame_nums)
@@ -145,8 +196,9 @@ class Buffer(object):
             }
             
             }
-            """, no_extern_c=True)  # no_extern_c required to avoid compilation error if using modules like thrust
+            """, no_extern_c=True)#, options=["--maxrregcount=32"])  # no_extern_c required to avoid compilation error if using modules like thrust
         self.nth_value_by_pixel = mod.get_function('nth_value_by_pixel')
+        self.nth_value_by_pixel_shared_quicksort = mod.get_function('nth_value_by_pixel_shared_quicksort')
         self.clear_frames = mod.get_function('clear_frames')
         self.update_frame = mod.get_function('update_frame')
 
@@ -207,8 +259,13 @@ class Buffer(object):
             # determine which index we want
             n = round(self.percentile * len(bg_indices))
 
-            self.nth_value_by_pixel(self.frames_gpu, np.int32(n), self.cur_bg_gpu,
-                                    block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1))
+            # self.nth_value_by_pixel(self.frames_gpu, np.int32(n), self.cur_bg_gpu,
+            #                         block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1))
+            # # TODO - write nth_value_by_pixel_32 to divy up pixels into warps and run 1 warp per block
+            # # can only fit 15 or less warps per SM at a time, else we exceed maximum shared memory per multiprocessor for -50:0 bg_indices
+            warp_count_x = int(np.ceil(self.slice_shape[0] / 32.0))
+            self.nth_value_by_pixel_shared_quicksort(self.frames_gpu, np.int32(n), self.cur_bg_gpu,
+                                                     block=(32, 1, 1), grid=(warp_count_x, self.slice_shape[1]), shared=32*self.buffer_length*self.frames.itemsize)
 
             # copy value back to host
             cuda.memcpy_dtoh(self.cur_bg, self.cur_bg_gpu)
