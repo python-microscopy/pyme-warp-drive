@@ -8,7 +8,7 @@ from pycuda.compiler import SourceModule
 
 
 class Buffer(object):
-    def __init__(self, data_buffer, percentile=0.25, buffer_length=30, threads_per_block_in_sort=64):
+    def __init__(self, data_buffer, percentile=0.25, buffer_length=30):
         self.data_buffer = data_buffer
         self.buffer_length = buffer_length
         self.percentile = percentile
@@ -34,11 +34,11 @@ class Buffer(object):
         self.new_frame_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
 
         # get info about selected GPU
-        self.gpu_info = pycuda.tools.DeviceData()
-
-        self.threads_per_block_in_sort = threads_per_block_in_sort
-        # determine how many warps can fit for our given buffer length
-        shared_mem_per_block = self.frames.itemsize * threads_per_block_in_sort * buffer_length
+        # self.gpu_info = pycuda.tools.DeviceData()
+        #
+        # self.threads_per_block_in_sort = threads_per_block_in_sort
+        # # determine how many warps can fit for our given buffer length
+        # shared_mem_per_block = self.frames.itemsize * threads_per_block_in_sort * buffer_length
         # print 'Shared Memory size:', info.shared_memory
         # print 'Blocks per MP:', info.thread_blocks_per_mp
         # print 'MP count:', self.dev.multiprocessor_count
@@ -204,7 +204,7 @@ class Buffer(object):
 
     def update(self, frame, position):
         # send new frame to GPU
-        cuda.memcpy_htod(self.new_frame_gpu, self.data_buffer.dataSource.getSlice(frame).astype(np.float32))
+        cuda.memcpy_htod(self.new_frame_gpu, np.ascontiguousarray(self.data_buffer.dataSource.getSlice(frame), dtype=np.float32))
         # update the frame buffer on the GPU
         self.update_frame(self.frames_gpu, self.new_frame_gpu, position,
                           block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1))
@@ -261,7 +261,6 @@ class Buffer(object):
 
             # self.nth_value_by_pixel(self.frames_gpu, np.int32(n), self.cur_bg_gpu,
             #                         block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1))
-            # # TODO - write nth_value_by_pixel_32 to divy up pixels into warps and run 1 warp per block
             # # can only fit 15 or less warps per SM at a time, else we exceed maximum shared memory per multiprocessor for -50:0 bg_indices
             warp_count_x = int(np.ceil(self.slice_shape[0] / 32.0))
             self.nth_value_by_pixel_shared_quicksort(self.frames_gpu, np.int32(n), self.cur_bg_gpu,
@@ -354,14 +353,29 @@ if __name__ == '__main__':
         
         percentile = 0.25
         # run a test
-        imsz = 3
-        ds = DataSource(imsz, imsz, 100)
+        ds = DataSource(960, 240, 100)
         buff.dataSource = ds
         g_buf = Buffer(buff, percentile=percentile)
         indices = set(range(30))
         """
         timeit.timeit('g_buf.getBackground(indices)', setup=setup_script, number=1000)
 
+        setup_script = """
+        class buff(object):
+            pass
+
+        from PYME.IO.DataSources.RandomDataSource import DataSource
+        from warpDrive.buffers import Buffer
+
+        percentile = 0.25
+        # run a test
+        ds = DataSource(960, 240, 100)
+        buff.dataSource = ds
+        g_buf = Buffer(buff, percentile=percentile)
+        g_buf.getBackground(set(range(30)))
+        indices = set(range(1,31))
+        """
+        timeit.timeit('g_buf.getBackground(indices)', setup=setup_script, number=1000)
 
 
 
@@ -373,8 +387,7 @@ if __name__ == '__main__':
         
         percentile = 0.25
         # run a test
-        imsz = 3
-        ds = DataSource(imsz, imsz, 100)
+        ds = DataSource(960, 240, 100)
         
         dbuff = buff()
         dbuff.dataSource = ds
@@ -383,6 +396,28 @@ if __name__ == '__main__':
         from PYME.IO.buffers import backgroundBufferM
         c_buf = backgroundBufferM(dbuff, percentile=percentile)
         indices = set(range(30))
+        """
+
+        timeit.timeit('c_buf.getBackground(indices)', setup=setup_cpu, number=1000)
+
+        setup_cpu = """
+        class buff(object):
+            pass
+
+        from PYME.IO.DataSources.RandomDataSource import DataSource
+
+        percentile = 0.25
+        # run a test
+        ds = DataSource(960, 240, 100)
+
+        dbuff = buff()
+        dbuff.dataSource = ds
+
+        dbuff.getSlice = ds.getSlice
+        from PYME.IO.buffers import backgroundBufferM
+        c_buf = backgroundBufferM(dbuff, percentile=percentile)
+        c_buf.getBackground(set(range(30)))
+        indices = set(range(1, 31))
         """
 
         timeit.timeit('c_buf.getBackground(indices)', setup=setup_cpu, number=1000)
