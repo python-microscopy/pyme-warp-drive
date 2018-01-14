@@ -340,6 +340,7 @@ class detector:
         #import matplotlib.pyplot as plt
         #plt.imshow(self.testROI, interpolation='nearest')
         #plt.show()
+        self.dstreamer1.synchronize()
 
         return
 
