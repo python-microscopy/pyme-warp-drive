@@ -35,6 +35,9 @@ class detector:
         self.vstreamer1 = cuda.Stream()
         self.vstreamer2 = cuda.Stream()
 
+        self.streams = [self.dstreamer1, self.dstreamer2, self.vstreamer1, self.vstreamer2]
+        self.num_streams = len(self.streams)
+
         ###################### Compile CUDA code ######################
         # compile smoothing code
         self.smoothmod = detectorCompileNBlock_sCMOS()
@@ -310,29 +313,34 @@ class detector:
 
         # Pull candidates back to host so we can insert them chunk by chunk into the fit
         cuda.memcpy_dtoh_async(self.candPos, self.candPos_gpu, stream=self.dstreamer1)
+        # self.dstreamer1.synchronize()
 
+        stream_counter = 0
         indy = 0
         while indy < self.candCount:
+            # select stream
+            to_use = self.streams[stream_counter % self.num_streams]
             # Re-zero fit outputs
-            cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=self.dstreamer1)
-            cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=self.dstreamer1)
-            cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=self.dstreamer1)
+            cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=to_use)
+            cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=to_use)
+            cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=to_use)
 
             numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
 
-            cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=self.dstreamer1)
+            cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=to_use)
 
             # note that which fitFunc we use has already been decided by whether background was subtracted in detection
             self.fitFunc(self.data_gpu, np.float32(1.4), np.int32(200),
                     self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
                     self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0), self.bkgnd_gpu,  # self.testROI_gpu,
-                    block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=self.dstreamer1)
+                    block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
 
 
-            cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=self.dstreamer1)
-            cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=self.dstreamer1)
-            cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=self.dstreamer1)
+            cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=to_use)
+            cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=to_use)
+            cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=to_use)
             indy += numBlock
+            stream_counter += 1
 
 
         # uncomment if using testROI for dummy-checking:
@@ -340,7 +348,10 @@ class detector:
         #import matplotlib.pyplot as plt
         #plt.imshow(self.testROI, interpolation='nearest')
         #plt.show()
-        self.dstreamer1.synchronize()
+
+        # synchronize streams, recall a fast version of ceil(a/b) = (a - 1)/b + 1
+        for stream_index in range(min([(self.candCount - 1) / self.fitChunkSize + 1, self.num_streams])):
+            self.streams[stream_index].synchronize()
 
         return
 
