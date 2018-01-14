@@ -50,7 +50,7 @@ class Buffer(object):
 
         # dark map hack
         self.dark_map_gpu = None
-        if dark_map:
+        if dark_map is not None:
             if np.isscalar(dark_map):
                 dark_map = dark_map * np.ones((self.slice_shape))
 
