@@ -209,12 +209,19 @@ class detector:
 
             # assign fit function for non-bkgnd subtraction case
             self.fitFunc = self.gaussAstig
-        else:
-            #print('Background: mu = %f +- %f' % (np.mean(bkgnd), np.std(bkgnd)))
-            # send bkgnd via stream 1 because in current implementation, bkgnd is needed in row convolution
-            cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(bkgnd, dtype=np.float32),
-                                   stream=self.dstreamer1)
-            # assign our fit function
+        else:  # background is either already on the GPU or was passed to this function
+            try:
+                # if we have the gpu buffer, check that the calculation is finished
+                bkgnd.sync_calculation()
+                # pass off the pointer to the device memory
+                self.bkgnd_gpu = bkgnd.cur_bg_gpu
+            except AttributeError:
+                # background should be array, pass it to the GPU now
+                #print('Background: mu = %f +- %f' % (np.mean(bkgnd), np.std(bkgnd)))
+                # send bkgnd via stream 1 because in current implementation, bkgnd is needed in row convolution
+                cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(bkgnd, dtype=np.float32),
+                                       stream=self.dstreamer1)
+                # assign our fit function
             self.fitFunc = self.gaussAstigBkgndSub
 
         # make sure data is on the GPU before taking convolutions (otherwise dstreamer2 could potentially fire too soon)
