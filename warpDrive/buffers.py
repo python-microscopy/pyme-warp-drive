@@ -8,7 +8,7 @@ import buffers_cu
 
 
 class Buffer(object):
-    def __init__(self, data_buffer, percentile=0.25, buffer_length=30, dark_map=None):
+    def __init__(self, data_buffer, percentile=0.25, buffer_length=32, dark_map=None):
         self.data_buffer = data_buffer
         self.buffer_length = buffer_length
         self.percentile = percentile
@@ -65,6 +65,7 @@ class Buffer(object):
         mod = buffers_cu.percentile_buffer()
         self.nth_value_by_pixel = mod.get_function('nth_value_by_pixel')
         self.nth_value_by_pixel_shared_quicksort = mod.get_function('nth_value_by_pixel_shared_quicksort')
+        self.nth_value_by_pixel_search_sort = mod.get_function('nth_value_by_pixel_search_sort')
         self.clear_frames = mod.get_function('clear_frames')
         self.update_frame = mod.get_function('update_frame')
         self.subtract_b_from_a = mod.get_function('subtract_b_from_a')
@@ -82,6 +83,8 @@ class Buffer(object):
         self.cur_positions[frame] = position
 
         # NB - this function returns without synchronizing the stream
+        # NEXT LINE FOR DEBUGGING ONLY
+        cuda.memcpy_dtoh(self.frames, self.frames_gpu)
 
     def update_buffer(self, bg_indices):
         if len(bg_indices) != self.buffer_length:
@@ -121,6 +124,31 @@ class Buffer(object):
         self.cur_frames = bg_indices  # at this point, we've added all the new frames and removed all the outdated ones
 
     def calc_background(self, bg_indices, subtract_dark_map=True):
+        """
+        Just calculates the background, does not return it, nor does it wait for the calculation to terminate
+        :param bg_indices:
+        :return:
+        """
+        bg_indices = set(bg_indices)
+
+        self.update_buffer(bg_indices)
+
+        # block=(buffer_length, 2), grid=(slice_size[0] / 2, slice_size[1])
+
+
+        self.nth_value_by_pixel_search_sort(self.frames_gpu, self.index_to_grab, self.cur_bg_gpu,
+                                                 block=(self.buffer_length, 2, 1), grid=(self.slice_shape[0]/2, self.slice_shape[1]),
+                                                 stream=self.bg_streamer)
+
+        if subtract_dark_map and self.dark_map_gpu:
+            warp_count_x = int(np.ceil(self.slice_shape[0] / 32.0))
+            self.subtract_b_from_a(self.cur_bg_gpu, self.dark_map_gpu,
+                                   block=(32, 1, 1), grid=(warp_count_x, self.slice_shape[1]), stream=self.bg_streamer)
+
+            # NB - this function does not wait for the calculation to finish before returning, and does not copy anything
+            # back to the GPU!
+
+    def calc_background_quicksort(self, bg_indices, subtract_dark_map=True):
         """
         Just calculates the background, does not return it, nor does it wait for the calculation to terminate
         :param bg_indices:
@@ -233,19 +261,20 @@ def main():
     from PYME.IO.DataSources.RandomDataSource import DataSource
     percentile = 0.25
     # run a test
-    imsz = 1024
-    ds = DataSource(imsz, imsz, 100)
+    imsz_r = 960
+    imsz_c = 240
+    ds = DataSource(imsz_r, imsz_c, 100)
     dbuff.dataSource = ds
     g_buf = Buffer(dbuff, percentile=percentile)
 
-    bg_gpu = g_buf.getBackground(set(range(30)))
+    bg_gpu = g_buf.getBackground(set(range(32)))
 
     # check if this is also what the CPU gets
-    cpu_buffer = np.empty((imsz, imsz, g_buf.buffer_length))
+    cpu_buffer = np.empty((imsz_r, imsz_c, g_buf.buffer_length))
     for fi in range(g_buf.buffer_length):
         cpu_buffer[:, :, fi] = dbuff.dataSource.getSlice(fi)
     cpu_sorted = np.sort(cpu_buffer, axis=2)
-    index_of_interest = round(percentile * g_buf.buffer_length)
+    index_of_interest = int(round(percentile * g_buf.buffer_length))
     bg_cpu = cpu_sorted[:, :, index_of_interest]
 
     success = np.array_equal(bg_cpu, bg_gpu)
@@ -275,8 +304,8 @@ def main():
         # run a test
         ds = DataSource(960, 240, 100)
         buff.dataSource = ds
-        g_buf = Buffer(buff, percentile=percentile)
-        indices = set(range(30))
+        g_buf = Buffer(buff, percentile=percentile, buffer_length=32)
+        indices = set(range(32))
         """
         timeit.timeit('g_buf.getBackground(indices)', setup=setup_script, number=1000)
 
