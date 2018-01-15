@@ -236,7 +236,7 @@ and can write another version of this function to be dynamic if needed.
 
     // uncomment next part for debugging -> push sorted frames back for frames
     // DO NOT leave this uncommented for normal execution (will screw up which frames are actually on GPU)
-    frames[threadIdx.x + 32 * (blockIdx.y + gridDim.y * (2 * blockIdx.x + threadIdx.y))] = to_sort[shared_offset + threadIdx.x];
+//    frames[threadIdx.x + 32 * (blockIdx.y + gridDim.y * (2 * blockIdx.x + threadIdx.y))] = to_sort[shared_offset + threadIdx.x];
 //    frames[threadIdx.x + 32 * (blockIdx.y + gridDim.y * (2 * blockIdx.x + threadIdx.y))] = index_modifier;
 
 }
