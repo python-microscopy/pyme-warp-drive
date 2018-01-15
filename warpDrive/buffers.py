@@ -225,37 +225,6 @@ class Buffer(object):
             return self.cur_bg
 
 
-class SimpleBuffer_CPU(object):
-    def __init__(self, data_buffer, percentile=0.25, buffer_length=30):
-        self.data_buffer = data_buffer
-        self.percentile = percentile
-        self.buffer_length=buffer_length
-
-        self.slice_shape = self.data_buffer.dataSource.getSliceShape()
-
-        self.frames = np.empty((self.slice_shape[0], self.slice_shape[1], self.buffer_length))
-
-        self.cur_frames = set()
-        self.cur_bg = None
-
-        self.index_of_interest = round(percentile * g_buf.buffer_length)
-
-    def getBackground(self, bg_indices):
-        if bg_indices == self.cur_frames:
-            return self.cur_bg
-        else:
-            for fi in range(g_buf.buffer_length):
-                cpu_buffer[:, :, fi] = ds.getSlice(fi)
-
-            cpu_sorted = np.sort(cpu_buffer, axis=2)
-
-            self.cur_bg = cpu_sorted[:,:,index_of_interest]
-
-            return self.cur_bg
-
-
-class dbuff(object):
-    pass
 
 def main():
     from PYME.IO.DataSources.RandomDataSource import DataSource
@@ -280,17 +249,7 @@ def main():
     success = np.array_equal(bg_cpu, bg_gpu)
     print('test passed: %r' % success)
 
-    # # allocate test to_sort
-    # to_sort = np.zeros(30, dtype=np.float32)
-    # to_sort_gpu = cuda.mem_alloc(to_sort.size * to_sort.dtype.itemsize)
-    #
-    # # get_percentile(frames_gpu, np.int32(pix_x), np.int32(pix_y), np.int32(29), output, to_sort_gpu, block=(pix_x, pix_y, 1))
-    # n_to_grab = 0
-    #
-    # # get_percentile(frames_gpu, np.int32(n_to_grab), output, to_sort_gpu, block=(pix_x, pix_y, 1))
-    # get_percentile(frames_gpu, np.int32(n_to_grab), output, block=(pix_x, pix_y, 1))
-    # cuda.memcpy_dtoh(test, output)
-    # print(test)
+
     benchmark = False
     if benchmark:
         import timeit
@@ -320,8 +279,8 @@ def main():
         ds = DataSource(960, 240, 100)
         buff.dataSource = ds
         g_buf = Buffer(buff, percentile=percentile)
-        g_buf.getBackground(set(range(30)))
-        indices = set(range(1,31))
+        g_buf.getBackground(set(range(32)))
+        indices = set(range(1,33))
         """
         timeit.timeit('g_buf.getBackground(indices)', setup=setup_script, number=1000)
 
@@ -341,30 +300,30 @@ def main():
         dbuff.getSlice = ds.getSlice
         from PYME.IO.buffers import backgroundBufferM
         c_buf = backgroundBufferM(dbuff, percentile=percentile)
-        indices = set(range(30))
+        indices = set(range(32))
         """
 
         timeit.timeit('c_buf.getBackground(indices)', setup=setup_cpu, number=1000)
 
         setup_cpu = """
-            class buff(object):
-                pass
+        class buff(object):
+            pass
 
-            from PYME.IO.DataSources.RandomDataSource import DataSource
+        from PYME.IO.DataSources.RandomDataSource import DataSource
 
-            percentile = 0.25
-            # run a test
-            ds = DataSource(960, 240, 100)
+        percentile = 0.25
+        # run a test
+        ds = DataSource(960, 240, 100)
 
-            dbuff = buff()
-            dbuff.dataSource = ds
+        dbuff = buff()
+        dbuff.dataSource = ds
 
-            dbuff.getSlice = ds.getSlice
-            from PYME.IO.buffers import backgroundBufferM
-            c_buf = backgroundBufferM(dbuff, percentile=percentile)
-            c_buf.getBackground(set(range(30)))
-            indices = set(range(1, 31))
-            """
+        dbuff.getSlice = ds.getSlice
+        from PYME.IO.buffers import backgroundBufferM
+        c_buf = backgroundBufferM(dbuff, percentile=percentile)
+        c_buf.getBackground(set(range(32)))
+        indices = set(range(1, 33))
+        """
 
         timeit.timeit('c_buf.getBackground(indices)', setup=setup_cpu, number=1000)
 
