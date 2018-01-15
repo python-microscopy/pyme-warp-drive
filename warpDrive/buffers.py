@@ -1,13 +1,16 @@
+# Andrew Barentine, andrew.barentine@yale.edu
+
 import pycuda.driver as cuda
 import pycuda.autoinit
-import pycuda.tools
 import numpy as np
-from pycuda.compiler import SourceModule
 import buffers_cu
 
 
 
 class Buffer(object):
+    """
+    Handler for GPU-based percentile buffering
+    """
     def __init__(self, data_buffer, percentile=0.25, buffer_length=32, dark_map=None):
         self.data_buffer = data_buffer
         self.buffer_length = buffer_length
@@ -35,16 +38,6 @@ class Buffer(object):
 
         self.new_frame_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
 
-        # get info about selected GPU
-        # self.gpu_info = pycuda.tools.DeviceData()
-        #
-        # self.threads_per_block_in_sort = threads_per_block_in_sort
-        # # determine how many warps can fit for our given buffer length
-        # shared_mem_per_block = self.frames.itemsize * threads_per_block_in_sort * buffer_length
-        # print 'Shared Memory size:', info.shared_memory
-        # print 'Blocks per MP:', info.thread_blocks_per_mp
-        # print 'MP count:', self.dev.multiprocessor_count
-
         # create stream so background can be estimated asynchronously
         self.bg_streamer = cuda.Stream()
 
@@ -62,6 +55,15 @@ class Buffer(object):
         self.compile()
 
     def compile(self):
+        """
+
+        Compiles CUDA functions using PyCUDA SourceModule
+
+        Returns
+        -------
+        Nothing
+
+        """
         mod = buffers_cu.percentile_buffer()
         self.nth_value_by_pixel = mod.get_function('nth_value_by_pixel')
         self.nth_value_by_pixel_shared_quicksort = mod.get_function('nth_value_by_pixel_shared_quicksort')
@@ -71,6 +73,23 @@ class Buffer(object):
         self.subtract_b_from_a = mod.get_function('subtract_b_from_a')
 
     def update(self, frame, position):
+        """
+
+        Asynchronously replaces the frame currently residing on the GPU in the 'position' slice with the new frame. This
+        is performed in the bg_streamer stream, which is NOT synchronized before this functions returns.
+
+        Parameters
+        ----------
+        frame : int
+            time-index of frame being added to the buffer
+        position : int
+            position index where frame will be inserted in the buffer array held on the GPU.
+
+        Returns
+        -------
+        Nothing
+
+        """
         # send new frame to GPU
         cuda.memcpy_htod_async(self.new_frame_gpu,
                                np.ascontiguousarray(self.data_buffer.dataSource.getSlice(frame), dtype=np.float32),
@@ -83,10 +102,26 @@ class Buffer(object):
         self.cur_positions[frame] = position
 
         # NB - this function returns without synchronizing the stream
+
         # NEXT LINE FOR DEBUGGING ONLY
-        cuda.memcpy_dtoh(self.frames, self.frames_gpu)
+        # cuda.memcpy_dtoh(self.frames, self.frames_gpu)
 
     def update_buffer(self, bg_indices):
+        """
+
+        Loops through bg_indices and ensures the desired frames are on the GPU. Note that the position where each slice
+        is stored on the GPU does not matter.
+
+        Parameters
+        ----------
+        bg_indices : set
+            Frame indices to use when estimating the background for the frame about to be fit
+
+        Returns
+        -------
+        Nothing
+
+        """
         if len(bg_indices) != self.buffer_length:
             raise RuntimeError('changing GPU background buffer size is not currently supported')
 
@@ -106,7 +141,7 @@ class Buffer(object):
 
             self.update(frame, position)
 
-        # clear unwanted frames still living on the GPU
+        # clear unwanted frames still living on the GPU. NB-this part wont run unless buffer size is changed!
         num_excess = len(uncleared)
         if num_excess > 0:
             # update frames to be wiped on GPU (note that only :num_excesss matter)
@@ -125,9 +160,21 @@ class Buffer(object):
 
     def calc_background(self, bg_indices, subtract_dark_map=True):
         """
-        Just calculates the background, does not return it, nor does it wait for the calculation to terminate
-        :param bg_indices:
-        :return:
+
+        Just calculates the background, does not return it, nor does it wait for the calculation to terminate before
+        returning. This allows us to calculate the background asynchronously and later call Buffer.sync_calculation() to
+        make sure everything is finished before using Buffer.cur_bg_gpu or pulling it back to the CPU.
+
+        Parameters
+        ----------
+        bg_indices : iterable
+            Frame indices to use when estimating the background for the frame about to be fit
+        subtract_dark_map : bool
+            Flag to subtract the dark map from the background estimate while it is still on the GPU.
+
+        Returns
+        -------
+
         """
         bg_indices = set(bg_indices)
 
@@ -145,15 +192,17 @@ class Buffer(object):
             self.subtract_b_from_a(self.cur_bg_gpu, self.dark_map_gpu,
                                    block=(32, 1, 1), grid=(warp_count_x, self.slice_shape[1]), stream=self.bg_streamer)
 
-            # NB - this function does not wait for the calculation to finish before returning, and does not copy anything
-            # back to the GPU!
+        # NB - this function does not wait for the calculation to finish before returning, and does not copy anything
+        # back to the GPU!
 
     def calc_background_quicksort(self, bg_indices, subtract_dark_map=True):
         """
-        Just calculates the background, does not return it, nor does it wait for the calculation to terminate
-        :param bg_indices:
-        :return:
+
+        Depreciated version of Buffer.calc_background using a quicksort algorithm. This is not ideal due to the high
+        thread divergence!
+
         """
+        raise DeprecationWarning('This function is roughly an order of magnitude slower than Buffer.calc_background')
         bg_indices = set(bg_indices)
 
         self.update_buffer(bg_indices)
@@ -177,12 +226,34 @@ class Buffer(object):
 
     def sync_calculation(self):
         """
-        synchronize CUDA stream we are calculating the background in
-        :return:
+
+        Synchronizes the CUDA stream we are calculating the background in
+
+        Returns
+        -------
+        Nothing
+
         """
         self.bg_streamer.synchronize()
 
     def getBackground(self, bg_indices):
+        """
+
+        Calculates the background and waits for the calculation to terminate before returning the background estimate.
+        This function is useful if you need the background estimation performed in a non-asynchronous fashion.
+
+        Parameters
+        ----------
+        bg_indices : iterable
+            Frame indices to use when estimating the background for the frame about to be fit
+
+        Returns
+        -------
+        cur_bg : ndarray
+            Background estimate, based on the self.pctile percent of the frames indicated by bg_indices
+
+        """
+
         # estimate the background
         self.calc_background(bg_indices, subtract_dark_map=False)
         # bring it back from the GPU
@@ -194,37 +265,30 @@ class Buffer(object):
         return self.cur_bg
 
     def get_background(self):
+        """
+
+        Can be called AFTER Buffer.calc_background to transfer to background back to the CPU after the calculation
+        completes.
+
+        Returns
+        -------
+        cur_bg : ndarray
+            Background estimate, based on the self.pctile percent of the frames indicated by bg_indices
+
+        """
+        cuda.memcpy_dtoh_async(self.cur_bg, self.cur_bg_gpu, stream=self.bg_streamer)
         self.sync_calculation()
         return self.cur_bg
 
-    def getBackground_depreciated(self, bg_indices):
-        """
-        Does the full update and calculation
-        :param bg_indices:
-        :return:
-        """
-        bg_indices = set(bg_indices)
-        if bg_indices == self.cur_frames:
-            return self.cur_bg
-        else:
-            self.update_buffer(bg_indices)
-
-            # determine which index we want
-            n = round(self.percentile * len(bg_indices))
-
-            # self.nth_value_by_pixel(self.frames_gpu, np.int32(n), self.cur_bg_gpu,
-            #                         block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1))
-            # # can only fit 15 or less warps per SM at a time, else we exceed maximum shared memory per multiprocessor for -50:0 bg_indices
-            warp_count_x = int(np.ceil(self.slice_shape[0] / 32.0))
-            self.nth_value_by_pixel_shared_quicksort(self.frames_gpu, np.int32(n), self.cur_bg_gpu,
-                                                     block=(32, 1, 1), grid=(warp_count_x, self.slice_shape[1]), shared=32*self.buffer_length*self.frames.itemsize)
-
-            # copy value back to host
-            cuda.memcpy_dtoh(self.cur_bg, self.cur_bg_gpu)
-
-            return self.cur_bg
 
 
+# ----------- main() for testing GPU buffer sorting -----------
+
+
+
+class dbuff(object):
+    # TODO - move this dummy object into a proper unit test script along with main()
+    pass
 
 def main():
     from PYME.IO.DataSources.RandomDataSource import DataSource
