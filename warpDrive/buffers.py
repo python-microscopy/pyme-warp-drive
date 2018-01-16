@@ -16,7 +16,7 @@ class Buffer(object):
         self.buffer_length = buffer_length
         self.percentile = percentile
 
-        self.index_to_grab = np.int32(round(self.percentile * buffer_length))
+        self.index_to_grab = np.int32(max([round(self.percentile * buffer_length) - 1, 0]))
 
         self.cur_frames = set()
         self.cur_positions = {}
@@ -68,6 +68,7 @@ class Buffer(object):
         self.nth_value_by_pixel = mod.get_function('nth_value_by_pixel')
         self.nth_value_by_pixel_shared_quicksort = mod.get_function('nth_value_by_pixel_shared_quicksort')
         self.nth_value_by_pixel_search_sort = mod.get_function('nth_value_by_pixel_search_sort')
+        self.nth_value_by_pixel_search_sort_dynamic = mod.get_function('nth_value_by_pixel_search_sort_dynamic')
         self.clear_frames = mod.get_function('clear_frames')
         self.update_frame = mod.get_function('update_frame')
         self.subtract_b_from_a = mod.get_function('subtract_b_from_a')
@@ -95,7 +96,7 @@ class Buffer(object):
                                np.ascontiguousarray(self.data_buffer.dataSource.getSlice(frame), dtype=np.float32),
                                stream=self.bg_streamer)
         # update the frame buffer on the GPU
-        self.update_frame(self.frames_gpu, self.new_frame_gpu, position,
+        self.update_frame(self.frames_gpu, self.new_frame_gpu, position, np.int32(self.buffer_length),
                           block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1), stream=self.bg_streamer)
 
         # update position dict
@@ -122,7 +123,7 @@ class Buffer(object):
         Nothing
 
         """
-        if len(bg_indices) != self.buffer_length:
+        if len(bg_indices) > self.buffer_length:
             raise RuntimeError('changing GPU background buffer size is not currently supported')
 
         fresh = bg_indices - self.cur_frames
@@ -135,9 +136,9 @@ class Buffer(object):
                 # find where to put new frame, and clean up the position dictionary in the process
                 position = self.cur_positions.pop(uncleared.pop())
 
-            else:
-                # need to add data without replacing anything
-                position = np.int32(self.available.pop())
+            else:  # need to add data without replacing anything
+                # start from the front to make indexing on the GPU easier for un-full buffers
+                position = np.int32(self.available.pop(0))
 
             self.update(frame, position)
 
@@ -181,11 +182,35 @@ class Buffer(object):
         self.update_buffer(bg_indices)
 
         # block=(buffer_length, 2), grid=(slice_size[0] / 2, slice_size[1])
+        num_indices = len(bg_indices)
+        full = num_indices == self.buffer_length
+        if full and self.buffer_length == 32:
+            # no need to dynamically allocate shared memory
+            self.nth_value_by_pixel_search_sort(self.frames_gpu, self.index_to_grab, self.cur_bg_gpu,
+                                                block=(self.buffer_length, 2, 1),
+                                                grid=(self.slice_shape[0] / 2, self.slice_shape[1]),
+                                                stream=self.bg_streamer)
+        elif full:
+            # need to dynamically allocate
+            filled = np.int32(self.buffer_length)
+            self.nth_value_by_pixel_search_sort_dynamic(self.frames_gpu, self.index_to_grab,
+                                                        filled, filled, self.cur_bg_gpu,
+                                                        block=(self.buffer_length, 2, 1),
+                                                        grid=(self.slice_shape[0] / 2, self.slice_shape[1]),
+                                                        stream=self.bg_streamer,
+                                                        shared=2 * 2 * self.buffer_length * 4)
+        else:
+            # buffer is not full, need to change which index we grab and dynamically allocate shared
+            index_to_grab = np.int32(max([round(self.percentile * num_indices) - 1, 0]))
+            filled = np.int32(num_indices)
+            self.nth_value_by_pixel_search_sort_dynamic(self.frames_gpu, index_to_grab,
+                                                        filled, np.int32(self.buffer_length), self.cur_bg_gpu,
+                                                        block=(num_indices, 2, 1),
+                                                        grid=(self.slice_shape[0] / 2, self.slice_shape[1]),
+                                                        stream=self.bg_streamer)
 
 
-        self.nth_value_by_pixel_search_sort(self.frames_gpu, self.index_to_grab, self.cur_bg_gpu,
-                                                 block=(self.buffer_length, 2, 1), grid=(self.slice_shape[0]/2, self.slice_shape[1]),
-                                                 stream=self.bg_streamer)
+
 
         if subtract_dark_map and self.dark_map_gpu:
             warp_count_x = int(np.ceil(self.slice_shape[0] / 32.0))
@@ -298,17 +323,16 @@ def main():
     imsz_c = 240
     ds = DataSource(imsz_r, imsz_c, 100)
     dbuff.dataSource = ds
-    g_buf = Buffer(dbuff, percentile=percentile)
+    g_buf = Buffer(dbuff, percentile=percentile, buffer_length=31)
 
-    bg_gpu = g_buf.getBackground(set(range(32)))
+    bg_gpu = g_buf.getBackground(set(range(2)))
 
     # check if this is also what the CPU gets
     cpu_buffer = np.empty((imsz_r, imsz_c, g_buf.buffer_length))
-    for fi in range(g_buf.buffer_length):
+    for fi in range(2):#g_buf.buffer_length):
         cpu_buffer[:, :, fi] = dbuff.dataSource.getSlice(fi)
     cpu_sorted = np.sort(cpu_buffer, axis=2)
-    index_of_interest = int(round(percentile * g_buf.buffer_length))
-    bg_cpu = cpu_sorted[:, :, index_of_interest]
+    bg_cpu = cpu_sorted[:, :, g_buf.index_to_grab]
 
     success = np.array_equal(bg_cpu, bg_gpu)
     print('test passed: %r' % success)

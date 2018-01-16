@@ -19,7 +19,7 @@ __global__ void clear_frames(float *frames, int *frame_nums)
     frames[data_loc] = 1.0f/0.0f;
 }
 
-__global__ void update_frame(float *frames, float *new_frame, const int frame_num)
+__global__ void update_frame(float *frames, float *new_frame, const int frame_num, const int buffer_length)
 /*
     Maximum of 1024 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)
     Outdated: To be called with block dim: (image.shape[0], image.shape[1], 1)
@@ -29,7 +29,7 @@ __global__ void update_frame(float *frames, float *new_frame, const int frame_nu
 
     // row-major 3D index the same pixel in depth (fastest changing)
     //data_loc = frame_num + 30 * (threadIdx.y + blockDim.y * threadIdx.x);
-    data_loc = frame_num + 32 * (blockIdx.x + gridDim.x * threadIdx.x);
+    data_loc = frame_num + buffer_length * (blockIdx.x + gridDim.x * threadIdx.x);
 
     // replace value with new frame value
     //frames[data_loc] = new_frame[threadIdx.y + threadIdx.x * blockDim.y];
@@ -120,6 +120,8 @@ and can write another version of this function to be dynamic if needed.
     // write value into to_sort at the degeneracy-modified index.
     to_sort[shared_offset + smaller_count + index_modifier] = value;
 
+    __syncthreads();
+
     // have one thread for each pixel write out nth value for that pixel
     if (threadIdx.x == 0){
         // nth_values is 2D row-major
@@ -135,7 +137,84 @@ and can write another version of this function to be dynamic if needed.
 }
 
 
+__global__ void nth_value_by_pixel_search_sort_dynamic(float *frames, const int n, const int spots_filled, const int buffer_length, float *nth_values)
+/*
+Same function as above, only shared memory is dynamically allocated
+*/
+{
 
+    int shared_offset_to_sort = spots_filled * threadIdx.y; // offset since we're doing two pixels per block
+    int shared_offset_degeneracy_counter = 2 * spots_filled + (spots_filled * threadIdx.y);
+    extern __shared__ float sh_array[];
+//    int * degeneracy_counter = (int*)sh_array;
+//    float * degeneracy_counter = (float*)sh_array;
+//    float * to_sort = (float*)(&degeneracy_counter[2 * buffer_length]);
+//    extern __shared__ int degeneracy_counter[];
+//    extern __shared__ float to_sort[];  // will be 2 * buffer length (e.g. 64)
+//    __shared__ int degeneracy_counter[64];
+//    __shared__ float to_sort[64];  // will be 2 * buffer length (e.g. 64)
+    float value;
+    int ind, index_modifier, smaller_count=0;
+    int pix_r = 2 * blockIdx.x + threadIdx.y;
+    //int r_size = 2 * gridDim.x;
+    int pix_c = blockIdx.y;
+    int c_size = gridDim.y;
+
+    // give the thread the value it will sort. Note that frames is 3D row-major
+    // ind3 = threadIdx.x, dim3 = buffer_length (i.e. 32)
+    //value = frames[threadIdx.x + 32 * (blockIdx.y + gridDim.y * (2 * blockIdx.x + threadIdx.y))];//frames[threadIdx.x + 32 * (pix_c + c_size * pix_r)];
+    value = frames[threadIdx.x + buffer_length * (pix_c + c_size * pix_r)];
+
+//    if (threadIdx.x == 0 & threadIdx.y == 0){
+//        printf("dc pointer: %f\n", to_sort[0]);
+//    }
+
+    // load everything into shared
+//    to_sort[shared_offset + threadIdx.x] = value;
+    sh_array[shared_offset_to_sort + threadIdx.x] = value;
+
+    // zero the degeneracy so that adding one with make it 1, and if a second thread wants the same spot it will shift
+//    degeneracy_counter[shared_offset + threadIdx.x] = 0;
+    sh_array[shared_offset_degeneracy_counter + threadIdx.x] = 0;
+
+    // make sure shared allocations are loaded
+    __syncthreads();
+
+    // have each thread check sum the number of values less than the one it's responsible for
+    for (ind = 0; ind < spots_filled; ind++){
+//        if (to_sort[shared_offset + ind] < value){
+        if (sh_array[shared_offset_to_sort + ind] < value){
+            smaller_count += 1;
+        }
+    }
+
+    //atomically add 1 to the index the thread thinks it goes to
+//    index_modifier = (int) atomicAdd(&degeneracy_counter[shared_offset + smaller_count], 1.0f);
+    index_modifier = (int) atomicAdd(&sh_array[shared_offset_degeneracy_counter + smaller_count], 1);
+
+    // make sure all threads are done with to_sort before we replace it
+    __syncthreads();
+
+    // write value into to_sort at the degeneracy-modified index.
+//    to_sort[shared_offset + smaller_count + index_modifier] = value;
+    sh_array[shared_offset_to_sort + smaller_count + index_modifier] = value;
+
+    __syncthreads();
+    // have one thread for each pixel write out nth value for that pixel
+    if (threadIdx.x == 0){
+        // nth_values is 2D row-major
+//         nth_values[blockIdx.y + gridDim.y * (2* blockIdx.x + threadIdx.y)] = to_sort[shared_offset + n];
+//        nth_values[pix_c + c_size * pix_r] = to_sort[shared_offset + n];
+        nth_values[pix_c + c_size * pix_r] = sh_array[shared_offset_to_sort + n];
+    }
+
+    // uncomment next part for debugging -> push sorted frames back for frames
+    // DO NOT leave this uncommented for normal execution (will screw up which frames are actually on GPU)
+//   __syncthreads();
+//   frames[threadIdx.x + buffer_length * (blockIdx.y + gridDim.y * (2 * blockIdx.x + threadIdx.y))] = to_sort[shared_offset + threadIdx.x];
+//    frames[threadIdx.x + 32 * (blockIdx.y + gridDim.y * (2 * blockIdx.x + threadIdx.y))] = index_modifier;
+
+}
 
 
 
