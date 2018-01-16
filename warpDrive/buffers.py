@@ -207,7 +207,8 @@ class Buffer(object):
                                                         filled, np.int32(self.buffer_length), self.cur_bg_gpu,
                                                         block=(num_indices, 2, 1),
                                                         grid=(self.slice_shape[0] / 2, self.slice_shape[1]),
-                                                        stream=self.bg_streamer)
+                                                        stream=self.bg_streamer,
+                                                        shared=2 * 2 * num_indices * 4)
 
 
 
@@ -321,18 +322,22 @@ def main():
     # run a test
     imsz_r = 960
     imsz_c = 240
+    buffer_length = 31
+    indices = set(range(7))
+
     ds = DataSource(imsz_r, imsz_c, 100)
     dbuff.dataSource = ds
-    g_buf = Buffer(dbuff, percentile=percentile, buffer_length=31)
+    g_buf = Buffer(dbuff, percentile=percentile, buffer_length=buffer_length)
 
-    bg_gpu = g_buf.getBackground(set(range(2)))
+    bg_gpu = g_buf.getBackground(indices)
 
     # check if this is also what the CPU gets
     cpu_buffer = np.empty((imsz_r, imsz_c, g_buf.buffer_length))
-    for fi in range(2):#g_buf.buffer_length):
+    for fi in sorted(indices):#g_buf.buffer_length):
         cpu_buffer[:, :, fi] = dbuff.dataSource.getSlice(fi)
-    cpu_sorted = np.sort(cpu_buffer, axis=2)
-    bg_cpu = cpu_sorted[:, :, g_buf.index_to_grab]
+    cpu_sorted = np.sort(cpu_buffer[:,:,:len(indices)], axis=2)
+    index_to_grab = np.int32(max([round(percentile * len(indices)) - 1, 0]))
+    bg_cpu = cpu_sorted[:, :, index_to_grab]
 
     success = np.array_equal(bg_cpu, bg_gpu)
     print('test passed: %r' % success)

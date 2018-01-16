@@ -165,9 +165,6 @@ Same function as above, only shared memory is dynamically allocated
     //value = frames[threadIdx.x + 32 * (blockIdx.y + gridDim.y * (2 * blockIdx.x + threadIdx.y))];//frames[threadIdx.x + 32 * (pix_c + c_size * pix_r)];
     value = frames[threadIdx.x + buffer_length * (pix_c + c_size * pix_r)];
 
-//    if (threadIdx.x == 0 & threadIdx.y == 0){
-//        printf("dc pointer: %f\n", to_sort[0]);
-//    }
 
     // load everything into shared
 //    to_sort[shared_offset + threadIdx.x] = value;
