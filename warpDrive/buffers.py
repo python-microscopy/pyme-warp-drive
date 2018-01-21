@@ -5,9 +5,17 @@ import pycuda.autoinit
 import numpy as np
 import buffers_cu
 
+# It is convenient in the python-microsocpy environment (PYME) if this buffer is a subclass, but to keep things somewhat
+# independent, we can fall back to subclassing object if PYME is not available
+try:
+    from PYME.IO.buffers import backgroundBufferM as to_subclass
+except ImportError:
+    to_subclass = object
+    raise RuntimeWarning('Cannot import python-microscopy environment (PYME) background buffer - this buffer might ' 
+                         'not interface correctly with PYME')
 
 
-class Buffer(object):
+class Buffer(to_subclass):
     """
     Handler for GPU-based percentile buffering
     """
