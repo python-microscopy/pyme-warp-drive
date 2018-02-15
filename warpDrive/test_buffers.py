@@ -38,7 +38,7 @@ def gpu_cpu_comparison(buffer_length, indices):
         bg_cpu = get_cpu_background(bg_indices)
         bg_gpu = g_buf.getBackground(bg_indices)
 
-    assert np.array_equal(bg_cpu, bg_gpu)
+        assert np.array_equal(bg_cpu, bg_gpu)
 
 # ----------------- basic tests --------------------- #
 
@@ -59,8 +59,11 @@ def test_underfilled_dynamic():
 
 def test_series_start():
     buffer_length = 32
+    indices = []
     for bi in range(1, buffer_length + 1):
-        gpu_cpu_comparison(buffer_length, set(range(bi)))
+        indices.append(set(range(bi)))
+
+    gpu_cpu_comparison(buffer_length, indices)
 
 
 # def test_full_series():
