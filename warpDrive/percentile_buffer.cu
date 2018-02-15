@@ -19,6 +19,22 @@ __global__ void clear_frames(float *frames, int *frame_nums)
     frames[data_loc] = 1.0f/0.0f;
 }
 
+__global__ void clear_frame(float *frames, const int frame_num, const int buffer_length)
+/*
+    Maximum of 1024 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)
+
+*/
+{
+    int data_loc;
+
+    // row-major 3D index the same pixel in depth (fastest changing)
+    data_loc = frame_num + buffer_length * (blockIdx.x + gridDim.x * threadIdx.x);
+
+    // replace value with new frame value
+    //frames[data_loc] = new_frame[threadIdx.y + threadIdx.x * blockDim.y];
+    frames[data_loc] = 1.0f/0.0f;
+}
+
 __global__ void update_frame(float *frames, float *new_frame, const int frame_num, const int buffer_length)
 /*
     Maximum of 1024 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)

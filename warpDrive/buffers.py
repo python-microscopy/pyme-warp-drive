@@ -41,8 +41,8 @@ class Buffer(to_subclass):
         self.frames_gpu = cuda.mem_alloc(self.frames.size * self.frames.dtype.itemsize)
         # a = self.frames_gpu.as_buffer()
 
-        self.to_wipe = np.empty((self.buffer_length), np.float32)
-        self.to_wipe_gpu = cuda.mem_alloc(self.to_wipe.size * self.to_wipe.dtype.itemsize)
+        # self.to_wipe = np.empty((self.buffer_length), np.float32)
+        # self.to_wipe_gpu = cuda.mem_alloc(self.to_wipe.size * self.to_wipe.dtype.itemsize)
 
         self.new_frame_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
 
@@ -77,7 +77,7 @@ class Buffer(to_subclass):
         self.nth_value_by_pixel_shared_quicksort = mod.get_function('nth_value_by_pixel_shared_quicksort')
         self.nth_value_by_pixel_search_sort = mod.get_function('nth_value_by_pixel_search_sort')
         self.nth_value_by_pixel_search_sort_dynamic = mod.get_function('nth_value_by_pixel_search_sort_dynamic')
-        self.clear_frames = mod.get_function('clear_frames')
+        self.clear_frame = mod.get_function('clear_frame')
         self.update_frame = mod.get_function('update_frame')
         self.subtract_b_from_a = mod.get_function('subtract_b_from_a')
 
@@ -115,6 +115,22 @@ class Buffer(to_subclass):
         # NEXT LINE FOR DEBUGGING ONLY
         # cuda.memcpy_dtoh(self.frames, self.frames_gpu)
 
+    def clear(self, frame):
+        """
+
+
+        """
+        position = self.cur_positions.pop(frame)
+
+        # update the frame buffer on the GPU
+        self.clear_frame(self.frames_gpu, position, np.int32(self.buffer_length),
+                          block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1), stream=self.bg_streamer)
+
+        # mark this position as available
+        self.available.append(position)
+        # NB - this function returns without synchronizing the stream
+
+
     def update_buffer(self, bg_indices):
         """
 
@@ -137,6 +153,11 @@ class Buffer(to_subclass):
         fresh = bg_indices - self.cur_frames
         uncleared = self.cur_frames - bg_indices
 
+        # # reset buffer if it is outdated
+        # if len(uncleared) == self.buffer_length:
+        #     uncleared = set()
+        #     self.available = range(self.buffer_length)
+
         # make sure we have all the current frames on the CPU
         for frame in fresh:
             # if we have unwanted frames on the GPU, replace them
@@ -150,19 +171,22 @@ class Buffer(to_subclass):
 
             self.update(frame, position)
 
-        # clear unwanted frames still living on the GPU. NB-this part wont run unless buffer size is changed!
-        num_excess = len(uncleared)
-        if num_excess > 0:
-            # update frames to be wiped on GPU (note that only :num_excesss matter)
-            self.to_wipe[:num_excess] = [self.cur_positions.pop(uncleared.pop()) for dummy in range(num_excess)]
-            cuda.memcpy_htod_async(self.to_wipe_gpu, self.to_wipe, stream=self.bg_streamer)
+        # clear unwanted frames still living on the GPU
+        for frame in uncleared:
+            self.clear(frame)
+        # num_excess = len(uncleared)
+        # if num_excess > 0:
+        #     # update frames to be wiped on GPU (note that only :num_excesss matter)
+        #     self.to_wipe[:num_excess] = [self.cur_positions.pop(uncleared.pop()) for dummy in range(num_excess)]
+        #     cuda.memcpy_htod_async(self.to_wipe_gpu, self.to_wipe, stream=self.bg_streamer)
+        #
+        #     # clear
+        #     self.clear_frames(self.frames_gpu, self.to_wipe_gpu,
+        #                       block=(self.slice_shape[0], self.slice_shape[1], num_excess), stream=self.bg_streamer)
+        #
+        #     # update available list
+        #     self.available.append(self.to_wipe[:num_excess])
 
-            # clear
-            self.clear_frames(self.frames_gpu, self.to_wipe_gpu,
-                              block=(self.slice_shape[0], self.slice_shape[1], num_excess), stream=self.bg_streamer)
-
-            # update available list
-            self.available.append(self.to_wipe[:num_excess])
 
         # update current frame set
         self.cur_frames = bg_indices  # at this point, we've added all the new frames and removed all the outdated ones

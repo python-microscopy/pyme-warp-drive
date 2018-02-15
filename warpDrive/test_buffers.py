@@ -67,13 +67,9 @@ def test_series_start():
 
 def test_recycling():
     buffer_length = 32
-    indices = []
-    for bi in range(1, buffer_length + 1):
-        indices.append(set(range(bi)))
-
-    print(len(indices))
-    indices += indices  # run it through twice
-    print(len(indices))
+    indices = [set(range(buffer_length))]
+    for bi in range(1, buffer_length):
+        indices.append(set(range(buffer_length, buffer_length + bi)))
 
     gpu_cpu_comparison(buffer_length, indices)
 
