@@ -73,6 +73,13 @@ def test_recycling():
 
     gpu_cpu_comparison(buffer_length, indices)
 
+def test_recycling_with_overlap():
+    buffer_length = 32
+    indices = [set(range(buffer_length))]
+    for bi in range(buffer_length / 2, buffer_length):
+        indices.append(set(range(bi)))
+
+    gpu_cpu_comparison(buffer_length, indices)
 
 # def test_full_series():
 #     indices = []
