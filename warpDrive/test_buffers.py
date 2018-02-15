@@ -1,5 +1,6 @@
 
 from PYME.IO.DataSources.RandomDataSource import DataSource
+from PYME.IO.buffers import dataBuffer
 from warpDrive.buffers import Buffer
 import numpy as np
 
@@ -7,17 +8,14 @@ PERCENTILE = 0.25
 IMSIZE_R = 960
 IMSIZE_C = 240
 
-class dbuff(object):
-    pass
 
 ds = DataSource(IMSIZE_R, IMSIZE_C, 100)
-DBUFF = dbuff()
-DBUFF.dataSource = ds
+DBUFF = dataBuffer(ds)
 
 def get_cpu_background(indices):
     cpu_buffer = np.empty((IMSIZE_R, IMSIZE_C, len(indices)))
     for ind, fi in enumerate(indices):  # g_buf.buffer_length):
-        cpu_buffer[:, :, ind] = DBUFF.dataSource.getSlice(fi)
+        cpu_buffer[:, :, ind] = DBUFF.getSlice(fi)
     cpu_sorted = np.sort(cpu_buffer[:, :, :len(indices)], axis=2)
     index_to_grab = np.int32(max([round(PERCENTILE * len(indices)) - 1, 0]))
     bg_cpu = cpu_sorted[:, :, index_to_grab]

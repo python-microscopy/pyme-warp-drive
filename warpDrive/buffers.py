@@ -101,7 +101,7 @@ class Buffer(to_subclass):
         """
         # send new frame to GPU
         cuda.memcpy_htod_async(self.new_frame_gpu,
-                               np.ascontiguousarray(self.data_buffer.dataSource.getSlice(frame), dtype=np.float32),
+                               np.ascontiguousarray(self.data_buffer.getSlice(frame), dtype=np.float32),
                                stream=self.bg_streamer)
         # update the frame buffer on the GPU
         self.update_frame(self.frames_gpu, self.new_frame_gpu, position, np.int32(self.buffer_length),
