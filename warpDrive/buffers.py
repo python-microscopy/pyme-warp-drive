@@ -150,8 +150,10 @@ class Buffer(to_subclass):
         if len(bg_indices) > self.buffer_length:
             raise RuntimeError('changing GPU background buffer size is not currently supported')
 
-        fresh = bg_indices - self.cur_frames
-        uncleared = self.cur_frames - bg_indices
+        cur_frames = set(self.cur_positions.keys())
+
+        fresh = bg_indices - cur_frames
+        uncleared = cur_frames - bg_indices
 
         # # reset buffer if it is outdated
         # if len(uncleared) == self.buffer_length:
@@ -189,7 +191,7 @@ class Buffer(to_subclass):
 
 
         # update current frame set
-        self.cur_frames = bg_indices  # at this point, we've added all the new frames and removed all the outdated ones
+        # self.cur_frames = bg_indices  # at this point, we've added all the new frames and removed all the outdated ones
 
     def calc_background(self, bg_indices, subtract_dark_map=True):
         """
