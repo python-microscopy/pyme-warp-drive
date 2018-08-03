@@ -81,7 +81,7 @@ class Buffer(to_subclass):
         self.update_frame = mod.get_function('update_frame')
         self.subtract_b_from_a = mod.get_function('subtract_b_from_a')
 
-    def update(self, frame, position):
+    def update(self, frame, position, frame_data):
         """
 
         Asynchronously replaces the frame currently residing on the GPU in the 'position' slice with the new frame. This
@@ -93,16 +93,15 @@ class Buffer(to_subclass):
             time-index of frame being added to the buffer
         position : int
             position index where frame will be inserted in the buffer array held on the GPU.
-
+        frame_data : ndarray
+            frame data as numpy.float32, contiguous in memory
         Returns
         -------
         Nothing
 
         """
         # send new frame to GPU
-        cuda.memcpy_htod_async(self.new_frame_gpu,
-                               np.ascontiguousarray(self.data_buffer.getSlice(frame), dtype=np.float32),
-                               stream=self.bg_streamer)
+        cuda.memcpy_htod_async(self.new_frame_gpu, frame_data, stream=self.bg_streamer)
         # update the frame buffer on the GPU
         self.update_frame(self.frames_gpu, self.new_frame_gpu, position, np.int32(self.buffer_length),
                           block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1), stream=self.bg_streamer)
@@ -162,6 +161,7 @@ class Buffer(to_subclass):
 
         # make sure we have all the current frames on the CPU
         for frame in fresh:
+            frame_data = np.ascontiguousarray(self.data_buffer.getSlice(frame), dtype=np.float32)
             # if we have unwanted frames on the GPU, replace them
             if len(uncleared) > 0:
                 # find where to put new frame, and clean up the position dictionary in the process
@@ -171,11 +171,7 @@ class Buffer(to_subclass):
                 # start from the front to make indexing on the GPU easier for un-full buffers
                 position = np.int32(self.available.pop(0))
 
-            try:
-                self.update(frame, position)
-            except IOError:  # this occurs when the data buffer can't find a frame e.g. on the cluster
-                # clean up so that our available/unclear sets are still accurate
-                self.available.append(position)
+            self.update(frame, position, frame_data)
 
         # clear unwanted frames still living on the GPU
         for frame in uncleared:
