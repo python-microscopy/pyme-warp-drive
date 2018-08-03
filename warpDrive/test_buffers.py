@@ -40,21 +40,24 @@ def get_cpu_background(indices):
     return bg_cpu
 
 
-def gpu_cpu_comparison(buffer_length, indices):
+def gpu_cpu_comparison(buffer_length, indices, g_buf=None):
     try:
         indices[0]
     except:
         # put indices in a list
         indices = [indices]
 
-    # make GPU buffer
-    g_buf = Buffer(DBUFF, percentile=PERCENTILE, buffer_length=buffer_length)
+    if g_buf is None:
+        # make GPU buffer
+        g_buf = Buffer(DBUFF, percentile=PERCENTILE, buffer_length=buffer_length)
 
     for bg_indices in indices:
         bg_cpu = get_cpu_background(bg_indices)
         bg_gpu = g_buf.getBackground(bg_indices)
 
         assert np.array_equal(bg_cpu, bg_gpu)
+
+    return g_buf
 
 def simulate_IOError(buffer_length, fail_at):
     """
@@ -88,10 +91,15 @@ def simulate_IOError(buffer_length, fail_at):
         # note that get_cpu_background grabs data from a perfectly functioning data buffer
         bg_cpu = get_cpu_background(bg_indices)
         # our poor gpu buffer, however, does not
-        bg_gpu = g_buf.getBackground(bg_indices)
+        try:
+            bg_gpu = g_buf.getBackground(bg_indices)
+        except IOError:
+            pass
         # if there is no error, then the two calculations should be identical
         if not fail:  # let frames which fail, fail, but check otherwise
             assert np.array_equal(bg_cpu, bg_gpu)
+
+    return g_buf
 
 # ----------------- basic tests --------------------- #
 
@@ -118,21 +126,23 @@ def test_series_start():
 
     gpu_cpu_comparison(buffer_length, indices)
 
-def test_recycling():
+def test_recycling(g_buf=None):
     buffer_length = 32
     indices = [set(range(buffer_length))]
     for bi in range(1, buffer_length):
         indices.append(set(range(buffer_length, buffer_length + bi)))
 
-    gpu_cpu_comparison(buffer_length, indices)
+    gpu_cpu_comparison(buffer_length, indices, g_buf)
+    return g_buf
 
-def test_recycling_with_overlap():
+def test_recycling_with_overlap(g_buf=None):
     buffer_length = 32
     indices = [set(range(buffer_length))]
     for bi in range(buffer_length / 2, buffer_length):
         indices.append(set(range(bi)))
 
-    gpu_cpu_comparison(buffer_length, indices)
+    g_buf = gpu_cpu_comparison(buffer_length, indices, g_buf)
+    return g_buf
 
 # ----------------- trickier cases --------------------- #
 
@@ -140,3 +150,10 @@ def test_IOError_on_get_frame():
     simulate_IOError(32, 0.5)
     simulate_IOError(32, 1.5)
 
+def test_recycling_after_IOError():
+    buffer_length = 32
+    g_buf = simulate_IOError(buffer_length, 1.5)
+
+    # now test recycling
+    test_recycling(g_buf)
+    # test_recycling_with_overlap(g_buf)
