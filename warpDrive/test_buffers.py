@@ -82,21 +82,16 @@ def simulate_IOError(buffer_length, fail_at):
     # make GPU buffer with fallible data buffer
     g_buf = Buffer(EBUFF, percentile=PERCENTILE, buffer_length=buffer_length)
 
-    ioerror_count = 0
     for bg_indices, fail in zip(indices, fail_queue):
         g_buf.data_buffer.fail = fail  # getSlice will fail if True
 
         # note that get_cpu_background grabs data from a perfectly functioning data buffer
         bg_cpu = get_cpu_background(bg_indices)
         # our poor gpu buffer, however, does not
-        try:
-            bg_gpu = g_buf.getBackground(bg_indices)
-            # if there is no IOError, then the two calculations should be identical
+        bg_gpu = g_buf.getBackground(bg_indices)
+        # if there is no error, then the two calculations should be identical
+        if not fail:  # let frames which fail, fail, but check otherwise
             assert np.array_equal(bg_cpu, bg_gpu)
-        except IOError:
-            ioerror_count += 1
-
-    assert ioerror_count < 2
 
 # ----------------- basic tests --------------------- #
 
@@ -144,12 +139,4 @@ def test_recycling_with_overlap():
 def test_IOError_on_get_frame():
     simulate_IOError(32, 0.5)
     simulate_IOError(32, 1.5)
-
-# def test_full_series():
-#     indices = []
-#     for fi in range(32, DBUFF.dataSource.length):
-#         start = fi - 32
-#         indices.append(set(range(start, fi)))
-#
-#     gpu_cpu_comparison(32, indices)
 

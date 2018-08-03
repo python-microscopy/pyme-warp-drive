@@ -171,7 +171,11 @@ class Buffer(to_subclass):
                 # start from the front to make indexing on the GPU easier for un-full buffers
                 position = np.int32(self.available.pop(0))
 
-            self.update(frame, position)
+            try:
+                self.update(frame, position)
+            except IOError:  # this occurs when the data buffer can't find a frame e.g. on the cluster
+                # clean up so that our available/unclear sets are still accurate
+                self.available.append(position)
 
         # clear unwanted frames still living on the GPU
         for frame in uncleared:
