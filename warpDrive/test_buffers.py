@@ -4,13 +4,31 @@ from PYME.IO.buffers import dataBuffer
 from warpDrive.buffers import Buffer
 import numpy as np
 
+class IOErrorDataBuffer(object):
+    """
+    awkwardly holds onto a normal databuffer, but has an attribute used as a flag to trigger IOErrors on
+    dataBuffer.getSlice()
+    """
+    def __init__(self, data_buffer):
+        self.data_buffer = data_buffer
+        self.dataSource = data_buffer.dataSource
+        self.fail = False
+
+    def getSlice(self, ind):
+        if self.fail:
+            raise IOError('testing GPU buffer handling of IOErrors')
+
+        return self.data_buffer.getSlice(ind)
+
 PERCENTILE = 0.25
 IMSIZE_R = 960
 IMSIZE_C = 240
 
 
 ds = DataSource(IMSIZE_R, IMSIZE_C, 100)
+# create two buffers for the same datasource, one can fail on command
 DBUFF = dataBuffer(ds)
+EBUFF = IOErrorDataBuffer(DBUFF)
 
 def get_cpu_background(indices):
     cpu_buffer = np.empty((IMSIZE_R, IMSIZE_C, len(indices)))
@@ -37,6 +55,48 @@ def gpu_cpu_comparison(buffer_length, indices):
         bg_gpu = g_buf.getBackground(bg_indices)
 
         assert np.array_equal(bg_cpu, bg_gpu)
+
+def simulate_IOError(buffer_length, fail_at):
+    """
+
+    Parameters
+    ----------
+    buffer_length : int
+    fail_at : float
+        Should be in the range [0, 2]. Specifies the fraction of buffer at which to fail. If less than 1, the data
+        buffer will throw an IOError at the gpu buffer before the buffer is full. If larger than 1, the error will be
+        thrown after the buffer is full.
+
+    Returns
+    -------
+
+    """
+
+    indices = [set(range(bi, bi + buffer_length)) for bi in range(2 * buffer_length)]
+
+    fail_queue = np.zeros_like(indices, dtype=bool)
+    # fail before buffer is full, and then after buffer is full, to test both cases
+    fail_ind = int(fail_at * buffer_length)
+    fail_queue[fail_ind] = True
+
+    # make GPU buffer with fallible data buffer
+    g_buf = Buffer(EBUFF, percentile=PERCENTILE, buffer_length=buffer_length)
+
+    ioerror_count = 0
+    for bg_indices, fail in zip(indices, fail_queue):
+        g_buf.data_buffer.fail = fail  # getSlice will fail if True
+
+        # note that get_cpu_background grabs data from a perfectly functioning data buffer
+        bg_cpu = get_cpu_background(bg_indices)
+        # our poor gpu buffer, however, does not
+        try:
+            bg_gpu = g_buf.getBackground(bg_indices)
+            # if there is no IOError, then the two calculations should be identical
+            assert np.array_equal(bg_cpu, bg_gpu)
+        except IOError:
+            ioerror_count += 1
+
+    assert ioerror_count < 2
 
 # ----------------- basic tests --------------------- #
 
@@ -78,6 +138,12 @@ def test_recycling_with_overlap():
         indices.append(set(range(bi)))
 
     gpu_cpu_comparison(buffer_length, indices)
+
+# ----------------- trickier cases --------------------- #
+
+def test_IOError_on_get_frame():
+    simulate_IOError(32, 0.5)
+    simulate_IOError(32, 1.5)
 
 # def test_full_series():
 #     indices = []
