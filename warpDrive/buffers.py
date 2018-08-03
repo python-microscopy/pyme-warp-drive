@@ -154,11 +154,6 @@ class Buffer(to_subclass):
         fresh = bg_indices - cur_frames
         uncleared = cur_frames - bg_indices
 
-        # # reset buffer if it is outdated
-        # if len(uncleared) == self.buffer_length:
-        #     uncleared = set()
-        #     self.available = range(self.buffer_length)
-
         # make sure we have all the current frames on the CPU
         for frame in fresh:
             frame_data = np.ascontiguousarray(self.data_buffer.getSlice(frame), dtype=np.float32)
@@ -168,7 +163,8 @@ class Buffer(to_subclass):
                 position = self.cur_positions.pop(uncleared.pop())
 
             else:  # need to add data without replacing anything
-                # start from the front to make indexing on the GPU easier for un-full buffers
+                # start from the front to make indexing on the GPU easier for never-before filled buffers. This lets us
+                # initialize them as empty rather than filling them with inf the first time through
                 position = np.int32(self.available.pop(0))
 
             self.update(frame, position, frame_data)
@@ -176,22 +172,6 @@ class Buffer(to_subclass):
         # clear unwanted frames still living on the GPU
         for frame in uncleared:
             self.clear(frame)
-        # num_excess = len(uncleared)
-        # if num_excess > 0:
-        #     # update frames to be wiped on GPU (note that only :num_excesss matter)
-        #     self.to_wipe[:num_excess] = [self.cur_positions.pop(uncleared.pop()) for dummy in range(num_excess)]
-        #     cuda.memcpy_htod_async(self.to_wipe_gpu, self.to_wipe, stream=self.bg_streamer)
-        #
-        #     # clear
-        #     self.clear_frames(self.frames_gpu, self.to_wipe_gpu,
-        #                       block=(self.slice_shape[0], self.slice_shape[1], num_excess), stream=self.bg_streamer)
-        #
-        #     # update available list
-        #     self.available.append(self.to_wipe[:num_excess])
-
-
-        # update current frame set
-        # self.cur_frames = bg_indices  # at this point, we've added all the new frames and removed all the outdated ones
 
     def calc_background(self, bg_indices, subtract_dark_map=True):
         """
