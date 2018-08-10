@@ -37,8 +37,10 @@ class Buffer(to_subclass):
         self.cur_bg = np.empty((pix_r, pix_c), np.float32)
         self.cur_bg_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
 
-        self.frames = np.empty((pix_r, pix_c, self.buffer_length), np.float32)
+        # TODO - ideally can initialize as empty, but inf is a part of hacky fix to pass test_recycling_after_IOError
+        self.frames = np.inf*np.ones((pix_r, pix_c, self.buffer_length), np.float32)  # self.frames = np.empty((pix_r, pix_c, self.buffer_length), np.float32)
         self.frames_gpu = cuda.mem_alloc(self.frames.size * self.frames.dtype.itemsize)
+
         # a = self.frames_gpu.as_buffer()
 
         # self.to_wipe = np.empty((self.buffer_length), np.float32)
@@ -48,6 +50,7 @@ class Buffer(to_subclass):
 
         # create stream so background can be estimated asynchronously
         self.bg_streamer = cuda.Stream()
+        cuda.memcpy_htod_async(self.frames_gpu, self.frames, stream=self.bg_streamer)  # TODO - remove, part of hacky fix to pass test_recycling_after_IOError
 
         # dark map hack
         self.dark_map_gpu = None
@@ -216,13 +219,22 @@ class Buffer(to_subclass):
         else:
             # buffer is not full, need to change which index we grab and dynamically allocate shared
             index_to_grab = np.int32(max([round(self.percentile * num_indices) - 1, 0]))
-            filled = np.int32(num_indices)
+            # TODO - figure out another way to pass test_recycling_after_IOError unit test other than using full block to search partially filled buffer
+            # filled = np.int32(num_indices)
+            # self.nth_value_by_pixel_search_sort_dynamic(self.frames_gpu, index_to_grab,
+            #                                             filled, np.int32(self.buffer_length), self.cur_bg_gpu,
+            #                                             block=(num_indices, 2, 1),
+            #                                             grid=(self.slice_shape[0] / 2, self.slice_shape[1]),
+            #                                             stream=self.bg_streamer,
+            #                                             shared=2 * 2 * num_indices * 4)
+            # float * frames, const int n, const int spots_filled, const int buffer_length, float * nth_values
             self.nth_value_by_pixel_search_sort_dynamic(self.frames_gpu, index_to_grab,
-                                                        filled, np.int32(self.buffer_length), self.cur_bg_gpu,
-                                                        block=(num_indices, 2, 1),
+                                                        np.int32(self.buffer_length), np.int32(self.buffer_length),
+                                                        self.cur_bg_gpu,
+                                                        block=(self.buffer_length, 2, 1),
                                                         grid=(self.slice_shape[0] / 2, self.slice_shape[1]),
                                                         stream=self.bg_streamer,
-                                                        shared=2 * 2 * num_indices * 4)
+                                                        shared=2 * 2 * self.buffer_length * 4)
 
 
 
