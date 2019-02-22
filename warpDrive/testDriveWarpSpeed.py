@@ -34,7 +34,7 @@ def runTest(plotIt=False, subBkgnd=False, compare=False):
     _warpDrive.prepvar(varmap, flatmap, electronsPerCount)
 
     stppwr = 0
-    print 'Number of trials: %i' % 10**stppwr
+    print('Number of trials: %i' % 10**stppwr)
     #cuda.start_profiler()
 
 
@@ -79,9 +79,9 @@ def runTest(plotIt=False, subBkgnd=False, compare=False):
         crlb = np.copy(_warpDrive.CRLB)
         llh = np.copy(_warpDrive.LLH)
 
-        print np.array_equal(dparsBk, dpars)
-        print np.array_equal(crlbBk, crlb)
-        print np.array_equal(llhBk, llh)
+        print(np.array_equal(dparsBk, dpars))
+        print(np.array_equal(crlbBk, crlb))
+        print(np.array_equal(llhBk, llh))
 
         import matplotlib.pyplot as plt
         plt.figure()
@@ -112,7 +112,7 @@ def runTest(plotIt=False, subBkgnd=False, compare=False):
 
     #print('Mean runtime of %.7f, +- %.7f' % (np.mean(telapsed), np.std(telapsed)))
 
-    print _warpDrive.dpars.shape
+    print(_warpDrive.dpars.shape)
     if plotIt:
         import matplotlib.pyplot as plt
         plt.figure()

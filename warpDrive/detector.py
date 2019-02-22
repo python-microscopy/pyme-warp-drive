@@ -60,12 +60,12 @@ class detector:
         self.gaussAstigBkgndSub = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig_subBkgnd")
 
         # print information about selected GPU
-        print 'Name:', self.dev.name()
-        print 'Compute capability:', self.dev.compute_capability()
+        print('Name: %s' % self.dev.name())
+        print('Compute capability: %s' % (self.dev.compute_capability(),))
         info = pycuda.tools.DeviceData()
-        print 'Shared Memory size:', info.shared_memory
-        print 'Blocks per MP:', info.thread_blocks_per_mp
-        print 'MP count:', self.dev.multiprocessor_count
+        print('Shared Memory size: %d' % info.shared_memory)
+        print('Blocks per MP: %d' % info.thread_blocks_per_mp)
+        print('MP count: %d' % self.dev.multiprocessor_count)
         #sharedinfo = self.context.get_shared_config()
         #print sharedinfo
 
