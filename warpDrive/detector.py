@@ -187,20 +187,25 @@ class detector(object):
         self.varmap = varmap
 
         # note that PYME-style flatmaps are unitless, need to convert to gain in units of [ADU/e-]
-        cuda.memcpy_htod_async(self.gain_gpu, np.ascontiguousarray(1./(electronsPerCount*flatmap), dtype=np.float32), stream=self.vstreamer1)
+        cuda.memcpy_htod_async(self.gain_gpu,
+                               np.ascontiguousarray(1. / (electronsPerCount * flatmap), dtype=np.float32),
+                               stream=self.vstreamer1)
 
-        cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.dstreamer1)
-        cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.dstreamer1)
-        cuda.memcpy_htod_async(self.invvar_gpu, np.ascontiguousarray(self.varmap, dtype=np.float32), stream=self.dstreamer1)
+        cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.vstreamer1)
+        cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.vstreamer1)
+        cuda.memcpy_htod_async(self.invvar_gpu, np.ascontiguousarray(self.varmap, dtype=np.float32),
+                               stream=self.vstreamer1)
+
+        self.vstreamer1.synchronize()
 
         # Take row convolutions
         self.rfunc_v(self.invvar_gpu, self.unif1v_gpu, self.filter1_gpu,
-                   self.halfFiltBig, self.colsize, block=(self.csize, 1, 1),
-                   grid=(self.rsize, 1), stream=self.dstreamer1)
+                     self.halfFiltBig, self.colsize, block=(self.csize, 1, 1),
+                     grid=(self.rsize, 1), stream=self.vstreamer1)
 
         self.rfunc_v(self.invvar_gpu, self.unif2v_gpu, self.filter2_gpu,
-                   self.halfFiltSmall, self.colsize, block=(self.csize, 1, 1),
-                   grid=(self.rsize, 1), stream=self.dstreamer2)
+                     self.halfFiltSmall, self.colsize, block=(self.csize, 1, 1),
+                     grid=(self.rsize, 1), stream=self.vstreamer2)
 
         # Take column convolutions
         self.cfunc(self.unif1v_gpu, self.filter1_gpu, self.rowsize, self.colsize, self.halfFiltBig,
