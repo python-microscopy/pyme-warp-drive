@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='PYMEwarpDrive',
-      version='0.2',
+      version='0.3',
       description='GPU-accelerated fitting plugin for PYME',
       url='https://bitbucket.org/AndrewBarentine/pymewarpdrive',
       author='Andrew Barentine, David Baddeley, and Fang Huang',
