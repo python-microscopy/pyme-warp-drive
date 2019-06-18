@@ -11,20 +11,47 @@ import pycuda.tools
 import numpy as np
 from detector_cu import *
 
+def norm_uniform_filter(length):
+    """
+    Create a normalized uniform filter to use on the GPU. Note that our real-space filtering currently requires even
+    filter sizes. To accommodate odd sizes, we use an even sized filter with the 0th element set to zero. Sub-pixel
+    shifts in candidate emitter ROI detection resulting from use of even filters, or combinations of even and odd
+    filters, are ignored.
+
+    Parameters
+    ----------
+    length: int
+        Length of uniform filter to return
+
+    Returns
+    -------
+    filter: np.array
+        1d normalized uniform filter
+
+    """
+    norm = 1./length
+    if length % 2 == 0:  # even
+        filter = np.ascontiguousarray(norm * np.ones(length), dtype=np.float32)
+    else:  # odd
+        # set up filter for use in same even-filter-sized convolution functions by setting first element 0
+        filter = np.ascontiguousarray(norm * np.ones(length + 1), dtype=np.float32)
+        filter[0] = 0
+    return filter
 
 
-class detector:
 
-    def __init__(self, dfilterBig, dfilterSmall):
+class detector(object):
+    def __init__(self, small_filter_size=4, large_filter_size=8, guess_psf_sigma=1.4):
         """
         Initialize PyCUDA and compile CUDA functions. All CUDA functions will be run in the default context
         in several streams initialized here.
         """
 
-        self.dfilterBig = dfilterBig
-        self.dfilterSmall = dfilterSmall
-        self.halfFiltBig = np.int32(0.5*len(self.dfilterBig))
-        self.halfFiltSmall = np.int32(0.5*len(self.dfilterSmall))
+        self.dfilterBig = norm_uniform_filter(large_filter_size)
+        self.dfilterSmall = norm_uniform_filter(small_filter_size)
+        self.halfFiltBig = np.int32(0.5*large_filter_size)
+        self.halfFiltSmall = np.int32(0.5*small_filter_size)
+        self.guess_psf_sigma = np.float32(guess_psf_sigma)
 
         ###################### initialize PyCUDA ######################
         # select the first device and run in the default context
@@ -330,7 +357,7 @@ class detector:
             cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=to_use)
 
             # note that which fitFunc we use has already been decided by whether background was subtracted in detection
-            self.fitFunc(self.data_gpu, np.float32(1.4), np.int32(200),
+            self.fitFunc(self.data_gpu, self.guess_psf_sigma, np.int32(200),
                     self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
                     self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0), self.bkgnd_gpu,  # self.testROI_gpu,
                     block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
@@ -377,6 +404,3 @@ class detector:
         self.data = np.ascontiguousarray(data, dtype=np.float32)
         cuda.memcpy_htod(self.data_gpu, data)
         return
-
-def normUnifFilter(siz):
-    return np.ascontiguousarray((1./siz)*np.ones(siz, dtype=np.float32), dtype=np.float32)
