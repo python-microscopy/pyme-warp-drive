@@ -9,7 +9,7 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 import pycuda.tools
 import numpy as np
-from detector_cu import *
+from .detector_cu import *
 
 def norm_uniform_filter(length):
     """

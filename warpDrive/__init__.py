@@ -3,4 +3,4 @@
 #import pycuda.tools
 #import numpy as np
 #from detector_cu import *
-from detector import *
+from .detector import *
