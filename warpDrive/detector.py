@@ -382,7 +382,7 @@ class detector(object):
         #plt.show()
 
         # synchronize streams, recall a fast version of ceil(a/b) = (a - 1)/b + 1
-        for stream_index in range(min([(self.candCount - 1) / self.fitChunkSize + 1, self.num_streams])):
+        for stream_index in range(min([int((self.candCount - 1) / self.fitChunkSize) + 1, self.num_streams])):
             self.streams[stream_index].synchronize()
 
         return
