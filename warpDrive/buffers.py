@@ -28,7 +28,7 @@ class Buffer(to_subclass):
 
         self.cur_frames = set()
         self.cur_positions = {}
-        self.available = range(buffer_length)
+        self.available = list(range(buffer_length))
 
         self.slice_shape = self.data_buffer.dataSource.getSliceShape()
 
@@ -205,7 +205,7 @@ class Buffer(to_subclass):
             # no need to dynamically allocate shared memory
             self.nth_value_by_pixel_search_sort(self.frames_gpu, self.index_to_grab, self.cur_bg_gpu,
                                                 block=(self.buffer_length, 2, 1),
-                                                grid=(self.slice_shape[0] / 2, self.slice_shape[1]),
+                                                grid=(int(self.slice_shape[0] / 2), self.slice_shape[1]),
                                                 stream=self.bg_streamer)
         elif full:
             # need to dynamically allocate
@@ -213,7 +213,7 @@ class Buffer(to_subclass):
             self.nth_value_by_pixel_search_sort_dynamic(self.frames_gpu, self.index_to_grab,
                                                         filled, filled, self.cur_bg_gpu,
                                                         block=(self.buffer_length, 2, 1),
-                                                        grid=(self.slice_shape[0] / 2, self.slice_shape[1]),
+                                                        grid=(int(self.slice_shape[0] / 2), self.slice_shape[1]),
                                                         stream=self.bg_streamer,
                                                         shared=2 * 2 * self.buffer_length * 4)
         else:
@@ -232,7 +232,7 @@ class Buffer(to_subclass):
                                                         np.int32(self.buffer_length), np.int32(self.buffer_length),
                                                         self.cur_bg_gpu,
                                                         block=(self.buffer_length, 2, 1),
-                                                        grid=(self.slice_shape[0] / 2, self.slice_shape[1]),
+                                                        grid=(int(self.slice_shape[0] / 2), self.slice_shape[1]),
                                                         stream=self.bg_streamer,
                                                         shared=2 * 2 * self.buffer_length * 4)
 
