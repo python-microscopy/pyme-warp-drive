@@ -3,7 +3,7 @@
 import pycuda.driver as cuda
 import pycuda.autoinit
 import numpy as np
-import buffers_cu
+from . import buffers_cu
 
 # It is convenient in the python-microsocpy environment (PYME) if this buffer is a subclass, but to keep things somewhat
 # independent, we can fall back to subclassing object if PYME is not available
