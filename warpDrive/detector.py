@@ -171,20 +171,24 @@ class detector(object):
         smoothFrame. When the FOV is shifted, this must be called again in order to update the camera maps held by the
         GPU.
 
-        Args:
-            varmap: variance map
-            flatmap: flatmap, i.e. (1/gain)/<1/gain>. The conversion from flatmap to gainmap is done in-line as it is
-                sent to GPU. Note that PYME-style flatmaps are also normalized to one, so use electronsPerCount to
-                convert to units of [ADU/e-]
-            electronsPerCount: [e-/ADU], i.e. <1/gain>
+        Parameters
+        ----------
+            varmap: ndarray
+                variance map [e-^2]
+            flatmap: ndarray
+                flatmap [unitless, mean-normalized], can be calculated as (1/gain)/mean(1/gain). The conversion from
+                flatmap to gainmap [ADU/e-] is done in-line as it is sent to GPU.
+            electronsPerCount: float
+                Conversion factor from ADU to e-, [e-/ADU]
 
-        Returns:
-            nothing
+        Notes
+        -----
+        varmap was previously in units of [ADU^2] but changed 2019/11/14 to make consistent with PYME and support direct
+        use of PYME-generated variance maps. Older [ADU^2] camera maps will need to be resaved as [e-^2] as they are no
+        longer compatible.
         """
-        #print('Variance map: mu = %f +- %f' % (np.mean(varmap), np.std(varmap)))
-        #print('Flatfield map: mu = %f +- %f' % (np.mean(flatmap), np.std(flatmap)))
-        #print('ElectronsPerCount: %f' % electronsPerCount)
-        self.varmap = varmap
+
+        self.varmap = varmap / (electronsPerCount ** 2)
 
         # note that PYME-style flatmaps are unitless, need to convert to gain in units of [ADU/e-]
         cuda.memcpy_htod_async(self.gain_gpu,
