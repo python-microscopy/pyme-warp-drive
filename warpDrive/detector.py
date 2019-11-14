@@ -401,11 +401,14 @@ class detector(object):
         This function is only for testing. Allowing you to specify the candidate molecule positions in a scope with
         cuda drivers present
         """
-        cuda.memcpy_htod(self.candPos_gpu, np.ascontiguousarray(testCand, dtype=np.int32))
-        self.candCount = np.int32(len([testCand]))
-        return
+        cands = np.asarray(testCand)
+        n_cands = len(cands)
+        self.candPos[:n_cands] = cands
+        cuda.memcpy_htod(self.candPos_gpu, self.candPos)
+        self.candCount = np.int32(n_cands)
 
-    def insertData(self, data):
+    def insertData(self, data, background=None):
         self.data = np.ascontiguousarray(data, dtype=np.float32)
         cuda.memcpy_htod(self.data_gpu, data)
-        return
+        if background is not None:
+            cuda.memcpy_htod(self.bkgnd_gpu, np.ascontiguousarray(background, dtype=np.float32))
