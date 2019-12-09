@@ -34,6 +34,8 @@ class Buffer(to_subclass):
 
         #---- allocate memory
         pix_r, pix_c = self.slice_shape
+        pix_r = int(pix_r)  # use python dtypes instead of numpy int types
+        pix_c = int(pix_c)
         self.cur_bg = np.empty((pix_r, pix_c), np.float32)
         self.cur_bg_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
 
