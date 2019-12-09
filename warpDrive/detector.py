@@ -104,10 +104,10 @@ class detector(object):
         self.dshape = [int(d) for d in dshape]  # use numpy int type for sizes; avoid potential np.int64
         self.dsize = dshape[0] * dshape[1] * int(ditemsize)
 
-        self.n_rows = np.int32(self.dshape[0])  # integers must be passed to PyCUDA functions as int32's
+        self.n_rows = np.int32(self.dshape[0])  # integers must be passed to PyCUDA functions as int32
         self.n_columns = np.int32(self.dshape[1])
-        self.rsize = int(self.n_rows)  # need integer type for block/grid size definitions
-        self.csize = int(self.n_columns)
+        self.nrows = int(self.n_rows)  # integers used for block/grid allocations must be python int
+        self.ncolumns = int(self.n_columns)
 
 
         ###################### Allocate resources on GPU ######################
@@ -165,7 +165,7 @@ class detector(object):
         self.candPosChunk_gpu = cuda.mem_alloc(self.dummyPosChunk.size*self.dummyPosChunk.dtype.itemsize)
 
 
-    def prepvar(self, varmap, flatmap, electronsPerCount):
+    def prepvar(self, varmap, flatmap, electrons_per_count):
         """
         prepvar sends the variance and gain maps to the GPU, where they will remain. This function must be called before
         smoothFrame. When the FOV is shifted, this must be called again in order to update the camera maps held by the
@@ -192,7 +192,7 @@ class detector(object):
 
         # note that PYME-style flatmaps are unitless, need to convert to gain in units of [ADU/e-]
         cuda.memcpy_htod_async(self.gain_gpu,
-                               np.ascontiguousarray(1. / (electronsPerCount * flatmap), dtype=np.float32),
+                               np.ascontiguousarray(1. / (electrons_per_count * flatmap), dtype=np.float32),
                                stream=self.vstreamer1)
 
         cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.vstreamer1)
@@ -204,18 +204,18 @@ class detector(object):
 
         # Take row convolutions
         self.rfunc_v(self.invvar_gpu, self.unif1v_gpu, self.filter1_gpu,
-                     self.halfFiltBig, self.n_columns, block=(self.csize, 1, 1),
-                     grid=(self.rsize, 1), stream=self.vstreamer1)
+                     self.halfFiltBig, self.n_columns, block=(self.ncolumns, 1, 1),
+                     grid=(self.nrows, 1), stream=self.vstreamer1)
 
         self.rfunc_v(self.invvar_gpu, self.unif2v_gpu, self.filter2_gpu,
-                     self.halfFiltSmall, self.n_columns, block=(self.csize, 1, 1),
-                     grid=(self.rsize, 1), stream=self.vstreamer2)
+                     self.halfFiltSmall, self.n_columns, block=(self.ncolumns, 1, 1),
+                     grid=(self.nrows, 1), stream=self.vstreamer2)
 
         # Take column convolutions
         self.cfunc(self.unif1v_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
-                   block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.vstreamer1)
+                   block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.vstreamer1)
         self.cfunc(self.unif2v_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
-                   block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.vstreamer2)
+                   block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.vstreamer2)
 
         # Pause until complete
         self.vstreamer1.synchronize()
@@ -268,18 +268,18 @@ class detector(object):
 
         ############################# row convolutions ###################################
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.gain_gpu, self.filter1_gpu,
-                   self.halfFiltBig, self.n_columns, self.bkgnd_gpu, block=(self.csize, 1, 1),
-                   grid=(self.rsize, 1), stream=self.dstreamer1)
+                   self.halfFiltBig, self.n_columns, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
+                   grid=(self.nrows, 1), stream=self.dstreamer1)
 
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif2_gpu, self.gain_gpu, self.filter2_gpu,
-                   self.halfFiltSmall, self.n_columns, self.bkgnd_gpu, block=(self.csize, 1, 1),
-                   grid=(self.rsize, 1), stream=self.dstreamer2)
+                   self.halfFiltSmall, self.n_columns, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
+                   grid=(self.nrows, 1), stream=self.dstreamer2)
 
         ############################# column convolutions ###################################
         self.cfunc(self.unif1_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
-                   block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.dstreamer1)
+                   block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.dstreamer1)
         self.cfunc(self.unif2_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
-                   block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.dstreamer2)
+                   block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.dstreamer2)
 
         # dstreamer1 does not need to be synced because next call is in that stream.
         self.dstreamer2.synchronize()
@@ -287,7 +287,7 @@ class detector(object):
         ############################# generate and subtract smooth iamges ###################################
         # (float *unifsmalldat,  float *unifsmallvar, float *uniflargedat, float *uniflargevar,int colsize, int halfFilt)
         self.smoothIm(self.unif1_gpu, self.unif1v_gpu, self.unif2_gpu, self.unif2v_gpu, self.n_columns,
-                      self.halfFiltBig, block=(self.csize, 1, 1), grid=(self.rsize, 1), stream=self.dstreamer1)
+                      self.halfFiltBig, block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.dstreamer1)
 
         # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in dstreamer1
 
@@ -303,11 +303,11 @@ class detector(object):
         self.halfMaxFilt = np.int32(np.floor(0.5*ROISize) - 1)
 
         # take maximum filter
-        self.maxfrow(self.unif1_gpu, self.maxfData_gpu, self.n_columns, self.halfMaxFilt, block=(self.csize, 1, 1),
-                     grid=(self.rsize, 1), stream=self.dstreamer1)
+        self.maxfrow(self.unif1_gpu, self.maxfData_gpu, self.n_columns, self.halfMaxFilt, block=(self.ncolumns, 1, 1),
+                     grid=(self.nrows, 1), stream=self.dstreamer1)
 
-        self.maxfcol(self.maxfData_gpu, self.n_columns, self.halfMaxFilt, block=(self.rsize, 1, 1),
-                     grid=(self.csize, 1), stream=self.dstreamer1)
+        self.maxfcol(self.maxfData_gpu, self.n_columns, self.halfMaxFilt, block=(self.nrows, 1, 1),
+                     grid=(self.ncolumns, 1), stream=self.dstreamer1)
 
         # candPos should be rezero'd at the end of fitting
         # FIXME: Check to see if removing the next line broke anything
@@ -324,7 +324,7 @@ class detector(object):
         # Check at which points the smoothed frame is equal to the maximum filter of the smooth frame
         findFunc(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.n_columns, self.candCount_gpu,
                    self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount, self.noiseSigma_gpu, np.float32(ePerADU),
-                   block=(self.csize, 1, 1), grid=(self.rsize, 1), stream=self.dstreamer1)
+                   block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.dstreamer1)
 
         # retrieve number of candidates for block/grid allocation in fitting
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
@@ -368,7 +368,7 @@ class detector(object):
             # note that which fitFunc we use has already been decided by whether background was subtracted in detection
             self.fitFunc(self.data_gpu, self.guess_psf_sigma, np.int32(200),
                     self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
-                    self.calcCRLB, self.candPosChunk_gpu, np.int32(self.csize), np.int32(0), self.bkgnd_gpu,  # self.testROI_gpu,
+                    self.calcCRLB, self.candPosChunk_gpu, np.int32(self.ncolumns), np.int32(0), self.bkgnd_gpu,  # self.testROI_gpu,
                     block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
 
 
