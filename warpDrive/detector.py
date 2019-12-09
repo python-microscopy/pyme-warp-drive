@@ -188,7 +188,7 @@ class detector(object):
         longer compatible.
         """
 
-        self.varmap = varmap / (electronsPerCount ** 2)  # [e-^2] -> [ADU^2]
+        self.varmap = varmap
 
         # note that PYME-style flatmaps are unitless, need to convert to gain in units of [ADU/e-]
         cuda.memcpy_htod_async(self.gain_gpu,
