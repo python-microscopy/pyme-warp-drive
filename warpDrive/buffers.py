@@ -30,12 +30,11 @@ class Buffer(to_subclass):
         self.cur_positions = {}
         self.available = list(range(buffer_length))
 
-        self.slice_shape = self.data_buffer.dataSource.getSliceShape()
+        # cuda.mem_alloc expects python int; avoid potential np.int64
+        self.slice_shape = [int(d) for d in self.data_buffer.dataSource.getSliceShape()]
 
         #---- allocate memory
         pix_r, pix_c = self.slice_shape
-        pix_r = int(pix_r)  # use python dtypes instead of numpy int types
-        pix_c = int(pix_c)
         self.cur_bg = np.empty((pix_r, pix_c), np.float32)
         self.cur_bg_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
 
