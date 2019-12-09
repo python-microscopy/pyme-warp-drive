@@ -104,10 +104,10 @@ class detector(object):
         self.dshape = [int(d) for d in dshape]  # use numpy int type for sizes; avoid potential np.int64
         self.dsize = dshape[0] * dshape[1] * int(ditemsize)
 
-        self.rowsize = np.int32(self.dshape[0])  # integers must be passed to PyCUDA functions as int32's
-        self.colsize = np.int32(self.dshape[1])
-        self.rsize = int(self.rowsize)  # need integer type for block/grid size definitions
-        self.csize = int(self.colsize)
+        self.n_rows = np.int32(self.dshape[0])  # integers must be passed to PyCUDA functions as int32's
+        self.n_columns = np.int32(self.dshape[1])
+        self.rsize = int(self.n_rows)  # need integer type for block/grid size definitions
+        self.csize = int(self.n_columns)
 
 
         ###################### Allocate resources on GPU ######################
@@ -204,17 +204,17 @@ class detector(object):
 
         # Take row convolutions
         self.rfunc_v(self.invvar_gpu, self.unif1v_gpu, self.filter1_gpu,
-                     self.halfFiltBig, self.colsize, block=(self.csize, 1, 1),
+                     self.halfFiltBig, self.n_columns, block=(self.csize, 1, 1),
                      grid=(self.rsize, 1), stream=self.vstreamer1)
 
         self.rfunc_v(self.invvar_gpu, self.unif2v_gpu, self.filter2_gpu,
-                     self.halfFiltSmall, self.colsize, block=(self.csize, 1, 1),
+                     self.halfFiltSmall, self.n_columns, block=(self.csize, 1, 1),
                      grid=(self.rsize, 1), stream=self.vstreamer2)
 
         # Take column convolutions
-        self.cfunc(self.unif1v_gpu, self.filter1_gpu, self.rowsize, self.colsize, self.halfFiltBig,
+        self.cfunc(self.unif1v_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
                    block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.vstreamer1)
-        self.cfunc(self.unif2v_gpu, self.filter2_gpu, self.rowsize, self.colsize, self.halfFiltSmall,
+        self.cfunc(self.unif2v_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
                    block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.vstreamer2)
 
         # Pause until complete
@@ -268,17 +268,17 @@ class detector(object):
 
         ############################# row convolutions ###################################
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.gain_gpu, self.filter1_gpu,
-                   self.halfFiltBig, self.colsize, self.bkgnd_gpu, block=(self.csize, 1, 1),
+                   self.halfFiltBig, self.n_columns, self.bkgnd_gpu, block=(self.csize, 1, 1),
                    grid=(self.rsize, 1), stream=self.dstreamer1)
 
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif2_gpu, self.gain_gpu, self.filter2_gpu,
-                   self.halfFiltSmall, self.colsize, self.bkgnd_gpu, block=(self.csize, 1, 1),
+                   self.halfFiltSmall, self.n_columns, self.bkgnd_gpu, block=(self.csize, 1, 1),
                    grid=(self.rsize, 1), stream=self.dstreamer2)
 
         ############################# column convolutions ###################################
-        self.cfunc(self.unif1_gpu, self.filter1_gpu, self.rowsize, self.colsize, self.halfFiltBig,
+        self.cfunc(self.unif1_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
                    block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.dstreamer1)
-        self.cfunc(self.unif2_gpu, self.filter2_gpu, self.rowsize, self.colsize, self.halfFiltSmall,
+        self.cfunc(self.unif2_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
                    block=(self.rsize, 1, 1), grid=(self.csize, 1), stream=self.dstreamer2)
 
         # dstreamer1 does not need to be synced because next call is in that stream.
@@ -286,7 +286,7 @@ class detector(object):
 
         ############################# generate and subtract smooth iamges ###################################
         # (float *unifsmalldat,  float *unifsmallvar, float *uniflargedat, float *uniflargevar,int colsize, int halfFilt)
-        self.smoothIm(self.unif1_gpu, self.unif1v_gpu, self.unif2_gpu, self.unif2v_gpu, self.colsize,
+        self.smoothIm(self.unif1_gpu, self.unif1v_gpu, self.unif2_gpu, self.unif2v_gpu, self.n_columns,
                       self.halfFiltBig, block=(self.csize, 1, 1), grid=(self.rsize, 1), stream=self.dstreamer1)
 
         # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in dstreamer1
@@ -303,10 +303,10 @@ class detector(object):
         self.halfMaxFilt = np.int32(np.floor(0.5*ROISize) - 1)
 
         # take maximum filter
-        self.maxfrow(self.unif1_gpu, self.maxfData_gpu, self.colsize, self.halfMaxFilt, block=(self.csize, 1, 1),
+        self.maxfrow(self.unif1_gpu, self.maxfData_gpu, self.n_columns, self.halfMaxFilt, block=(self.csize, 1, 1),
                      grid=(self.rsize, 1), stream=self.dstreamer1)
 
-        self.maxfcol(self.maxfData_gpu, self.colsize, self.halfMaxFilt, block=(self.rsize, 1, 1),
+        self.maxfcol(self.maxfData_gpu, self.n_columns, self.halfMaxFilt, block=(self.rsize, 1, 1),
                      grid=(self.csize, 1), stream=self.dstreamer1)
 
         # candPos should be rezero'd at the end of fitting
@@ -322,7 +322,7 @@ class detector(object):
             findFunc = self.findPeaksSNThresh
 
         # Check at which points the smoothed frame is equal to the maximum filter of the smooth frame
-        findFunc(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.colsize, self.candCount_gpu,
+        findFunc(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.n_columns, self.candCount_gpu,
                    self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount, self.noiseSigma_gpu, np.float32(ePerADU),
                    block=(self.csize, 1, 1), grid=(self.rsize, 1), stream=self.dstreamer1)
 
