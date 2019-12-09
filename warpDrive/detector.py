@@ -101,8 +101,8 @@ class detector(object):
         Allocate memory on the GPU. These allocations will be held until the detector object is destroyed.
         """
 
-        self.dshape = dshape
-        self.dsize = dshape[0] * dshape[1] * ditemsize
+        self.dshape = [int(d) for d in dshape]  # use numpy int type for sizes; avoid potential np.int64
+        self.dsize = dshape[0] * dshape[1] * int(ditemsize)
 
         self.rowsize = np.int32(self.dshape[0])  # integers must be passed to PyCUDA functions as int32's
         self.colsize = np.int32(self.dshape[1])
@@ -188,7 +188,7 @@ class detector(object):
         longer compatible.
         """
 
-        self.varmap = varmap / (electronsPerCount ** 2)  # [e-^2] -> [ADU^2]
+        self.varmap = varmap
 
         # note that PYME-style flatmaps are unitless, need to convert to gain in units of [ADU/e-]
         cuda.memcpy_htod_async(self.gain_gpu,
