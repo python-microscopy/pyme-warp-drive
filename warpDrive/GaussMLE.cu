@@ -951,7 +951,7 @@ __global__ void kernel_MLEFit_pix_threads_astig_subBkgnd(float *d_data, float PS
 
 __global__ void pix_threads_astig_bkgndsub_mle(float *data_e, float psf_sigma, int iterations,
         float *fit_results, float *cramer_rao_bounds, float *log_likelihood, float *variance_over_gain_squared,
-         int calc_crb, int *candidate_ind, int n_columns, int n_candidate_start, float *background){
+         int calc_crb, int *candidate_ind, int n_columns, float *background){
 /*
 
     Parameters
@@ -1061,7 +1061,7 @@ __global__ void pix_threads_astig_bkgndsub_mle(float *data_e, float psf_sigma, i
 
     //int uplc = candidate_ind[blockIdx.x] - (0.5*blockDim.x) - (0.5*blockDim.y)*n_columns; //upper left hand corner of the subROI
     //FIXME: Check why we need this offset -> potentially has to do with convolutions using even kernel sizes
-    int uplc = candidate_ind[blockIdx.x + n_candidate_start] - (0.5*(blockDim.x - 2)) - (0.5*(blockDim.y - 2))*n_columns;
+    int uplc = candidate_ind[blockIdx.x] - (0.5*(blockDim.x - 2)) - (0.5*(blockDim.y - 2))*n_columns;
 
     pixel_bkgnd = background[uplc + threadIdx.x + threadIdx.y*n_columns]; // [e-]
     pixel_data = data_e[uplc + threadIdx.x + threadIdx.y*n_columns];  // [e-]
@@ -1272,7 +1272,7 @@ __global__ void pix_threads_astig_bkgndsub_mle(float *data_e, float psf_sigma, i
         theta[0] += (float) (uplc % n_columns); //Row offset (x)
         theta[1] += (float) (uplc / n_columns); //Column offset (y)
         //rezero the list of candidate molecules so that it no longer needs to be reallocated for each frame's fit.
-        candidate_ind[blockIdx.x+n_candidate_start] = 0;
+        candidate_ind[blockIdx.x] = 0;
     }
 
 
