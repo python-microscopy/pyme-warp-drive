@@ -82,7 +82,7 @@ class detector(object):
         self.maxfrow = self.findmod.get_function("maxfRowGPU")
         self.maxfcol = self.findmod.get_function("maxfColGPU")
         self.findPeaks = self.findmod.get_function("findPeaks")
-        self.findPeaksSNThresh = self.findmod.get_function("findPeaksSNThresh")
+        self.find_candidates_noise_thresh = self.findmod.get_function('find_candidates_noise_thresh')
 
 
         # compile fit
@@ -196,38 +196,35 @@ class detector(object):
         longer compatible.
         """
 
+        # store varmap as an attribute so the fit factory can check if the camera ROI has shifted
         self.varmap = varmap
 
+        # send maps to the gpu
         cuda.memcpy_htod_async(self.flatmap_gpu, np.ascontiguousarray(flatmap, dtype=np.float32),
                                stream=self.vstreamer1)
         cuda.memcpy_htod_async(self.varmap_gpu, np.ascontiguousarray(self.varmap, dtype=np.float32),
                                stream=self.vstreamer1)
         cuda.memcpy_htod_async(self.darkmap_gpu, np.ascontiguousarray(darkmap, dtype=np.float32),
-                               stream=self.vstreamer1)  # TODO - can we optimize streams here?
+                               stream=self.vstreamer1)
+
+        # precalculate a per-pixel constant we'll use in the fit later. OK to leave this unsynced until later
         self.prep_variance_over_gain_squared(self.varmap_gpu, self.flatmap_gpu, np.float32(electrons_per_count),
                                              self.variance_over_gain_squared_gpu, block=(self.ncolumns, 1, 1),
-                                             grid=(self.nrows, 1), stream=self.vstreamer1)
+                                             grid=(self.nrows, 1), stream=self.vstreamer2)
 
-
-        # FIXME - remove "gain_gpu" and simplify units in filter.cu
-        # note that PYME-style flatmaps are unitless, need to convert to gain in units of [ADU/e-]
-        cuda.memcpy_htod_async(self.gain_gpu,
-                               np.ascontiguousarray(1. / (electrons_per_count * flatmap), dtype=np.float32),
-                               stream=self.vstreamer1)
-
+        # send our filters to device
         cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.vstreamer1)
         cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.vstreamer1)
-        cuda.memcpy_htod_async(self.invvar_gpu, np.ascontiguousarray(self.varmap, dtype=np.float32),
-                               stream=self.vstreamer1)
 
+        # make sure all maps are on the gpu before splitting into multiple streams
         self.vstreamer1.synchronize()
 
         # Take row convolutions
-        self.rfunc_v(self.invvar_gpu, self.unif1v_gpu, self.filter1_gpu,
+        self.rfunc_v(self.varmap_gpu, self.unif1v_gpu, self.filter1_gpu,
                      self.halfFiltBig, self.n_columns, block=(self.ncolumns, 1, 1),
                      grid=(self.nrows, 1), stream=self.vstreamer1)
 
-        self.rfunc_v(self.invvar_gpu, self.unif2v_gpu, self.filter2_gpu,
+        self.rfunc_v(self.varmap_gpu, self.unif2v_gpu, self.filter2_gpu,
                      self.halfFiltSmall, self.n_columns, block=(self.ncolumns, 1, 1),
                      grid=(self.nrows, 1), stream=self.vstreamer2)
 
@@ -237,7 +234,7 @@ class detector(object):
         self.cfunc(self.unif2v_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
                    block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.vstreamer2)
 
-        # Pause until complete
+        # make sure we're done before returning
         self.vstreamer1.synchronize()
         self.vstreamer2.synchronize()
 
@@ -295,9 +292,8 @@ class detector(object):
                 # assign our fit function
             self.fitFunc = self.pix_threads_astig_bkgndsub_mle
 
-        # make sure data is on the GPU before taking convolutions (otherwise dstreamer2 could potentially fire too soon)
+        # make sure self.prepare_frame() is finished, and if applicable, CPU background is on the GPU
         self.dstreamer1.synchronize()
-        # FIXME - simplify units in filter.cu
         ############################# row convolutions ###################################
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.gain_gpu, self.filter1_gpu,
                    self.halfFiltBig, self.n_columns, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
@@ -354,10 +350,11 @@ class detector(object):
             #                        stream=self.dstreamer1)
             # findFunc = self.findPeaksSNThresh
 
-        # Check at which points the smoothed frame is equal to the maximum filter of the smooth frame
-        self.findPeaksSNThresh(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.n_columns, self.candCount_gpu,
-                   self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount, self.noise_sigma_gpu, np.float32(ePerADU),
-                   block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.dstreamer1)
+
+        self.find_candidates_noise_thresh(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.candCount_gpu,
+                                          self.candPos_gpu, self.maxCandCount, np.int32(0.5*ROISize),
+                                          self.noise_sigma_gpu,
+                                          block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.dstreamer1)
 
         # retrieve number of candidates for block/grid allocation in fitting
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
