@@ -110,42 +110,52 @@ if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > thresh)){
 
 }
 
-__global__ void findPeaksSNThresh(float *unif, float *maxfData, float thresh, const int colsize, int *counter,
-int *candPos, const int halfROIsize, const int maxCandCount, float *noiseSig, const float electronsPerADU){
+__global__ void find_candidates_noise_thresh(float *dog_data, float *maxf_data, float thresh_factor, int *counter,
+int *candidate_indices, const int max_cand_count, const int half_roi_size, float *noise_sigma)
 /*
 
-Same function as findPeaks except that a pixel-specific threshold is applied by taking the product of thresh and
-noiseSig inputs
+    Applies a pixel-specific noise-based threshold to smoothed input data to find candidate molecules.
 
-args:
-    thresh: multiple of noise sigma to reject molecules below
-    noiseSig: pixel-specific noise estimate to be multiplied by thresh to threshold based on signal to noise
-    electronsPerADU: conversion factor going from [ADU] to [e-], calculated via 1/<gain map [ADU/e-]>
+    dog_data: difference of gaussian (dog) filtered data. [e-]
+    maxf_data: max-filtered copy of dog_data. [e-]
+    thresh_factor: multiple of noise sigma to reject molecules below
+    counter: number of molecules which have been found, used as index for writing out candidate position array. Access
+        should always be atomic.
+    candidate_indices: memory allocation to write-out candidate molecule indices
+    max_cand_count: length of candidate_indices array, so we can check that we don't try and write past it. Maximum
+        number of candidates that can be detected on a single frame.
+    half_roi_size: half size of the ROI [pixels]
+    noise_sigma: per-pixel noise standard deviation [e-]
 
+    CUDA indexing
+    -------------
+    block
+        x: n_columns
+            size[1] of the data frame
+    grid
+        x: n_rows
+            size[0] of the data frame
 */
+{
+    int dloc = blockIdx.x * gridDim.x + threadIdx.x;
+    int temp_ind;
+    // multiply threshold factor by the noise standard deviation
+    float threshold = thresh_factor * noise_sigma[dloc];
 
-int dloc = blockIdx.x*colsize + threadIdx.x;
-int temp;
-// convert threshold from [ADU] to [e-] and scale by thresh factor
-float SNThresh = thresh*noiseSig[dloc]*electronsPerADU;
 
-
-if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > SNThresh)){
-    if ((blockIdx.x > (halfROIsize + 2)) && ((gridDim.x - blockIdx.x) > (halfROIsize + 2)) && (threadIdx.x > (halfROIsize + 2)) &&((colsize - threadIdx.x) > (halfROIsize + 2))){
-        maxfData[dloc] = 1;
-        temp = atomicAdd(counter, 1);
-        if (*counter <= maxCandCount){
-            candPos[temp] = dloc;
+    if ((dog_data[dloc] == maxf_data[dloc]) && (dog_data[dloc] > threshold)){
+        if ((blockIdx.x > (half_roi_size + 2)) && ((gridDim.x - blockIdx.x) > (half_roi_size + 2))
+           && (threadIdx.x > (half_roi_size + 2)) && ((gridDim.x - threadIdx.x) > (half_roi_size + 2))){
+            maxf_data[dloc] = 1;
+            temp_ind = atomicAdd(counter, 1);
+            if (*counter <= max_cand_count){
+                candidate_indices[temp_ind] = dloc;
+            }
         }
-
     }
-
-}
     else {
-        maxfData[dloc] = 0;
+        maxf_data[dloc] = 0;
     }
-
-
 }
 
 /*
