@@ -66,7 +66,7 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
 
     Parameters
     ----------
-    data: input data [ADU]
+    data: input data [e-]
     readnoise_var: (per-pixel) variance due to readout noise [e-^2]
     noise_factor: typically 1.4 for EMCCD when gain is > 10, 1 for CCD and CMOS. [pe-^(-1/2)] see doi: 10.1109/TED.2003.813462
     electrons_per_count: conversion factor between ADU and electrons
@@ -82,7 +82,7 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
 */
 {
     return sqrt(readnoise_var
-                + noise_factor * noise_factor * electrons_per_count * em_gain * fmaxf(data, 1.0)
+                + noise_factor * noise_factor * em_gain * fmaxf(data, 1.0)
                 + em_gain * em_gain / electrons_per_count);
 }
 
@@ -118,14 +118,12 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
 */
 {
     int ind = blockIdx.x * colsize + threadIdx.x;
-    // camera-correct data
-    data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind];  // [ADU]
+    // camera-correct data, and convert units
+    data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count;  // [ADU] -> [e-]
 
     // estimate noise
     sigma[ind] = estimate_noise_standard_deviation(data[ind], readnoise_var[ind], noise_factor, electrons_per_count,
                                                    em_gain);
-    // convert data to electrons
-    data[ind] *= electrons_per_count;  // [ADU] -> [e-]
 }
 
 
