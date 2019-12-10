@@ -173,8 +173,7 @@ class detector(object):
         # for troubleshooting:
         self.dtarget = np.zeros(self.dshape, dtype=np.float32)
 
-
-    def prepare_maps(self, darkmap, varmap, flatmap, electrons_per_count):
+    def prepare_maps(self, darkmap, varmap, flatmap, electrons_per_count, noise_factor, em_gain):
         """
         sends the variance and gain maps to the GPU, where they will remain. This function must be called before
         smoothFrame. When the FOV is shifted, this must be called again in order to update the camera maps held by the
@@ -199,6 +198,11 @@ class detector(object):
 
         # store varmap as an attribute so the fit factory can check if the camera ROI has shifted
         self.varmap = varmap
+
+        # store camera noise properties as attributes for use in estimating noise standard deviation
+        self._electrons_per_count = np.float32(electrons_per_count)
+        self._noise_factor = np.float32(noise_factor)
+        self._em_gain = np.float32(em_gain)
 
         # send maps to the gpu
         cuda.memcpy_htod_async(self.flatmap_gpu, np.ascontiguousarray(flatmap, dtype=np.float32),
@@ -242,14 +246,14 @@ class detector(object):
         #cuda.memcpy_dtoh(self.dtarget, self.unif1v_gpu)
         #plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
 
-    def prepare_frame(self, data, noise_factor, electrons_per_count, em_gain=1.0):
+    def prepare_frame(self, data):
         self.data = np.ascontiguousarray(data, dtype=np.float32)
         cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
 
         self.raw_adu_to_e_and_estimate_noise(self.data_gpu, self.varmap_gpu, self.darkmap_gpu, self.flatmap_gpu,
-                                             np.float32(noise_factor), np.float32(electrons_per_count),
-                                             np.float(em_gain), self.noise_sigma_gpu, block=(self.nrows, 1, 1),
-                                             grid=(self.ncolumns, 1), stream=self.dstreamer1)
+                                             self._noise_factor, self._electrons_per_count, self._em_gain,
+                                             self.noise_sigma_gpu,
+                                             block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.dstreamer1)
 
         # dstreamer1 is synchronized in difference_of_gaussian_filter, so no need to repeat that here.
 
@@ -321,7 +325,7 @@ class detector(object):
         # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in dstreamer1
 
 
-    def get_candidates(self, thresh=4, ROISize=16, ePerADU=1.0):
+    def get_candidates(self, thresh=4, ROISize=16):
         """
         getCand should only be called after smoothFrame. It performs a maximum filter on the smoothed image, then finds
         all points (farther than half-ROIsize away from the frame-border) at which the maximum filter is equal to the
