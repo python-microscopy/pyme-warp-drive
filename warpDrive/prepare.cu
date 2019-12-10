@@ -91,7 +91,7 @@ __global__ void correct_frame_and_estimate_noise(float *data, float *readnoise_v
 const float noise_factor, const float electrons_per_count, const float em_gain, float *sigma)
 /*
     Estimates a per-pixel noise standard deviation and converts a raw ADU frame into units of e-. The input data frame
-    is modified in-place after the noise is estimated.
+    is modified in-place.
 
     Parameters
     ----------
@@ -118,9 +118,14 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
 */
 {
     int ind = blockIdx.x * colsize + threadIdx.x;
+    // camera-correct data
+    data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind];  // [ADU]
+
+    // estimate noise
     sigma[ind] = estimate_noise_standard_deviation(data[ind], readnoise_var[ind], noise_factor, electrons_per_count,
                                                    em_gain);
-    data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count  // [ADU] -> [e-]
+    // convert data to electrons
+    data[ind] *= electrons_per_count;  // [ADU] -> [e-]
 }
 
 
