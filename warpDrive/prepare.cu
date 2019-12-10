@@ -87,7 +87,7 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
 }
 
 
-__global__ void correct_frame_and_estimate_noise(float *data, float *readnoise_var, float *darkmap, float *flatmap,
+__global__ void raw_adu_to_e_and_estimate_noise(float *data, float *readnoise_var, float *darkmap, float *flatmap,
 const float noise_factor, const float electrons_per_count, const float em_gain, float *sigma)
 /*
     Estimates a per-pixel noise standard deviation and converts a raw ADU frame into units of e-. The input data frame
@@ -97,6 +97,8 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
     ----------
     data: input data [ADU]
     readnoise_var: (per-pixel) variance due to readout noise [e-^2]
+    darkmap: per-pixel map of the analog-digital offset [ADU]
+    flatmap: flatfield map [unitless]
     noise_factor: typically 1.4 for EMCCD when gain is > 10, 1 for CCD and CMOS. [pe-^(-1/2)] see doi: 10.1109/TED.2003.813462
     electrons_per_count: conversion factor between ADU and electrons
     em_gain: conversion factor between electrons post-electron-multiplication and raw photoelectrons. [e-/pe-]
@@ -104,20 +106,20 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
 
     CUDA indexing
     -------------
+    Max number of threads per block is 1024 for pretty much all cards. Memory is row-major, so we coalesce if we use the
+    1-d block to read along the row of the image, and use the block index to read along columns. Note that the maximum
+    size of data is limited to [1024, 2^31 − 1] for pretty much all cards.
     block
-        x: n_columns
-            size[1] of the variance map
+        x: data.shape[0]
     grid
-        x: n_rows
-            size[0] of the variance map
-    FIXME - convert this to indexing used in background buffer so we can handle larger frames.
+        x: data.shape[1]
 
     Notes
     -----
     Note that the PYME.remFitBuf.fitTask.calcSigma returns variance in [ADU^2] while here we return in e-^2
 */
 {
-    int ind = blockIdx.x * colsize + threadIdx.x;
+    int ind = blockIdx.x * gridDim.x + threadIdx.x;
     // camera-correct data, and convert units
     data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count;  // [ADU] -> [e-]
 

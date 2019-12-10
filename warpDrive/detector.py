@@ -69,7 +69,7 @@ class detector(object):
         ###################### Compile CUDA code ######################
         self._prepare_mod = source_prepare.prepare()
         self.prep_variance_over_gain_squared = self._prepare_mod.get_function('variance_over_gain_squared')
-        self.correct_frame_and_estimate_noise = self._prepare_mod.get_function('correct_frame_and_estimate_noise')
+        self.raw_adu_to_e_and_estimate_noise = self._prepare_mod.get_function('raw_adu_to_e_and_estimate_noise')
         # compile smoothing code
         self.smoothmod = detectorCompileNBlock_sCMOS()
         self.rfunc_v = self.smoothmod.get_function("convRowGPU_var")
@@ -121,7 +121,7 @@ class detector(object):
         self.bkgnd_gpu = cuda.mem_alloc(self.dsize)
         # fill background with zeros on gpu in case fitting without background subtraction is called
         cuda.memcpy_htod(self.bkgnd_gpu, np.ascontiguousarray(np.zeros(self.dshape), dtype=np.float32))
-        self.noiseSigma_gpu = cuda.mem_alloc(self.dsize)
+        # self.noiseSigma_gpu = cuda.mem_alloc(self.dsize)
         self.unif1_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.unif2_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.unif1v_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
@@ -144,6 +144,7 @@ class detector(object):
         self.darkmap_gpu = cuda.mem_alloc(self.dsize)
         self.flatmap_gpu = cuda.mem_alloc(self.dsize)
         self.varmap_gpu = cuda.mem_alloc(self.dsize)
+        self.noise_sigma_gpu = cuda.mem_alloc(self.dsize)
         self.variance_over_gain_squared_gpu = cuda.mem_alloc(self.dsize)
 
 
@@ -246,14 +247,16 @@ class detector(object):
     def prepare_frame(self, data, noise_factor, electrons_per_count, em_gain=1.0):
         self.data = np.ascontiguousarray(data, dtype=np.float32)
         cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
-        self.correct_frame_and_estimate_noise(self.data_gpu, self.varmap_gpu, self.darkmap_gpu, self.flatmap_gpu,
-                                              np.float32(noise_factor), np.float32(electrons_per_count),
-                                              np.float(em_gain), self.noise_sigma_gpu, block=(self.ncolumns, 1, 1),
-                                              grid=(self.nrows, 1), stream=self.dstreamer1)
-        # fixme - check stream here
+
+        self.raw_adu_to_e_and_estimate_noise(self.data_gpu, self.varmap_gpu, self.darkmap_gpu, self.flatmap_gpu,
+                                             np.float32(noise_factor), np.float32(electrons_per_count),
+                                             np.float(em_gain), self.noise_sigma_gpu, block=(self.nrows, 1, 1),
+                                             grid=(self.ncolumns, 1), stream=self.dstreamer1)
+
+        # dstreamer1 is synchronized in difference_of_gaussian_filter, so no need to repeat that here.
 
 
-    def difference_of_gaussian_filter(self, data, background=None):
+    def difference_of_gaussian_filter(self, background=None):
         """
         smoothFrame passes a single frame of data to the GPU, and performs two 2D convolutions with different kernel
         sizes before subtracting the two. This is done in a variance-weighted fashion. For description, see supplemental
@@ -270,8 +273,8 @@ class detector(object):
         #print('Data: mu = %f +- %f' % (np.mean(photondat), np.std(photondat)))
         #print('Background: %s' % (bkgnd is None))
         # make sure that the data is contiguous, and send to GPU
-        self.data = np.ascontiguousarray(data, dtype=np.float32)
-        cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
+        # self.data = np.ascontiguousarray(data, dtype=np.float32)
+        # cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
         if background is None:
             # note that background array of zeros has already been sent to the GPU in allocateMem()
 
@@ -279,10 +282,10 @@ class detector(object):
             self.fitFunc = self.gaussAstig
         else:  # background is either already on the GPU or was passed to this function
             try:
-                # if we have the gpu buffer, check that the calculation is finished
-                background.sync_calculation()
-                # pass off the pointer to the device memory
+                # if we have the gpu buffer, pass off the pointer to the device memory
                 self.bkgnd_gpu = background.cur_bg_gpu
+                # make sure the calculation is finished
+                background.sync_calculation()
             except AttributeError:
                 # background should be array, pass it to the GPU now. FIXME - make sure background is in [e-] here
                 # send bkgnd via stream 1 because in current implementation, bkgnd is needed in row convolution
@@ -321,7 +324,7 @@ class detector(object):
         # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in dstreamer1
 
 
-    def getCand(self, thresh=4, ROISize=16, noiseSig=None, ePerADU=1.0):
+    def get_candidates(self, thresh=4, ROISize=16, ePerADU=1.0):
         """
         getCand should only be called after smoothFrame. It performs a maximum filter on the smoothed image, then finds
         all points (farther than half-ROIsize away from the frame-border) at which the maximum filter is equal to the
@@ -344,16 +347,16 @@ class detector(object):
         cuda.memcpy_htod_async(self.candCount_gpu, self.candCountZ, stream=self.dstreamer1)  #rezero the candidate count
 
         # determine whether to use simple threshold or pixel-dependent signal to noise threshold:
-        if noiseSig is None:
-            findFunc = self.findPeaks
-        else:
-            cuda.memcpy_htod_async(self.noiseSigma_gpu, np.ascontiguousarray(noiseSig.squeeze(), dtype=np.float32),
-                                   stream=self.dstreamer1)
-            findFunc = self.findPeaksSNThresh
+        # if noiseSig is None:
+        #     findFunc = self.findPeaks
+        # else:
+            # cuda.memcpy_htod_async(self.noise_sigma_gpu, np.ascontiguousarray(noiseSig.squeeze(), dtype=np.float32),
+            #                        stream=self.dstreamer1)
+            # findFunc = self.findPeaksSNThresh
 
         # Check at which points the smoothed frame is equal to the maximum filter of the smooth frame
-        findFunc(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.n_columns, self.candCount_gpu,
-                   self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount, self.noiseSigma_gpu, np.float32(ePerADU),
+        self.findPeaksSNThresh(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.n_columns, self.candCount_gpu,
+                   self.candPos_gpu, np.int32(0.5*ROISize), self.maxCandCount, self.noise_sigma_gpu, np.float32(ePerADU),
                    block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.dstreamer1)
 
         # retrieve number of candidates for block/grid allocation in fitting
