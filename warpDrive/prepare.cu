@@ -126,6 +126,34 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
                                                    em_gain);
 }
 
+__global__ void correct_frame_and_convert_adu_to_e(float *data, float *darkmap, float *flatmap,
+const float electrons_per_count)
+/*
+    Camera-corrects input data and converts from analog-digital units to e-. The input data frame is modified in-place.
+
+    Parameters
+    ----------
+    data: input data [ADU]
+    darkmap: per-pixel map of the analog-digital offset [ADU]
+    flatmap: flatfield map [unitless]
+    electrons_per_count: conversion factor between ADU and electrons
+
+    CUDA indexing
+    -------------
+    Max number of threads per block is 1024 for pretty much all cards. Memory is row-major, so we coalesce if we use the
+    1-d block to read along the row of the image, and use the block index to read along columns. Note that the maximum
+    size of data is limited to [1024, 2^31 − 1] for pretty much all cards.
+    block
+        x: data.shape[0]
+    grid
+        x: data.shape[1]
+*/
+{
+    int ind = blockIdx.x * gridDim.x + threadIdx.x;
+    // camera-correct data, and convert units
+    data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count;  // [ADU] -> [e-]
+}
+
 
 __global__ void variance_over_gain_squared(float *readnoise_var, float *flatmap, const float electrons_per_count,
 float *variance_over_gain_squared)

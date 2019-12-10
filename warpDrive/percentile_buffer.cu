@@ -57,6 +57,7 @@ __global__ void update_frame(float *frames, float *new_frame, const int frame_nu
 /*
     To be executed with one warp per block (32 threads)
     block=(32, 1, 1), grid=(warp_count_x, slice_shape[1])
+    // FIXME - this indexing is problematic for, e.g. 257 x 256 data
 */
 {
     //    int data_loc;
@@ -69,6 +70,7 @@ __global__ void update_frame(float *frames, float *new_frame, const int frame_nu
 /*
     To be executed with one warp per block (32 threads)
     block=(32, 1, 1), grid=(warp_count_x, slice_shape[1])
+    // FIXME - this indexing is problematic for, e.g. 257 x 256 data
 */
 {
     //    int data_loc;
