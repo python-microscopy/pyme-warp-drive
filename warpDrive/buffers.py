@@ -19,7 +19,8 @@ class Buffer(to_subclass):
     """
     Handler for GPU-based percentile buffering
     """
-    def __init__(self, data_buffer, percentile=0.25, buffer_length=32, dark_map=None):
+    def __init__(self, data_buffer, percentile=0.25, buffer_length=32, darkmap=None, flatmap=None,
+                 electrons_per_count=None):
         self.data_buffer = data_buffer
         self.buffer_length = buffer_length
         self.percentile = percentile
@@ -53,14 +54,20 @@ class Buffer(to_subclass):
         self.bg_streamer = cuda.Stream()
         cuda.memcpy_htod_async(self.frames_gpu, self.frames, stream=self.bg_streamer)  # TODO - remove, part of hacky fix to pass test_recycling_after_IOError
 
-        # dark map hack
-        self.dark_map_gpu = None
-        if dark_map is not None:
-            if np.isscalar(dark_map):
-                dark_map = dark_map * np.ones((self.slice_shape))
+        # camera correction ~hack. TODO make gpu camera map manager
+        self.electrons_per_count = electrons_per_count
+        self.darkmap_gpu, self.flatmap_gpu, self.varmap_gpu = None, None, None
+        if darkmap is not None:
+            if np.isscalar(darkmap):
+                darkmap = darkmap * np.ones((self.slice_shape))
 
-            self.dark_map_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
-            cuda.memcpy_htod(self.dark_map_gpu, dark_map.astype(np.float32))
+            map_mem_size = pix_r * pix_c * self.cur_bg.dtype.itemsize
+            self.darkmap_gpu = cuda.mem_alloc(map_mem_size)
+            cuda.memcpy_htod(self.darkmap_gpu, np.ascontiguousarray(darkmap, dtype=np.float32))
+
+            if np.isscalar(flatmap):
+                flatmap = flatmap * np.ones((self.slice_shape))
+            cuda.memcpy_htod(self.flatmap_gpu, np.ascontiguousarray(flatmap, dtype=np.float32))
 
         #---- compile
         print('compiling!\n')
@@ -84,6 +91,7 @@ class Buffer(to_subclass):
         self.clear_frame = mod.get_function('clear_frame')
         self.update_frame = mod.get_function('update_frame')
         self.subtract_b_from_a = mod.get_function('subtract_b_from_a')
+        self.raw_adu_to_electrons = mod.get_function('raw_adu_to_electrons')
 
     def update(self, frame, position, frame_data):
         """
@@ -177,7 +185,7 @@ class Buffer(to_subclass):
         for frame in uncleared:
             self.clear(frame)
 
-    def calc_background(self, bg_indices, subtract_dark_map=True):
+    def calc_background(self, bg_indices, convert_to_electrons=True):
         """
 
         Just calculates the background, does not return it, nor does it wait for the calculation to terminate before
@@ -188,8 +196,8 @@ class Buffer(to_subclass):
         ----------
         bg_indices : iterable
             Frame indices to use when estimating the background for the frame about to be fit
-        subtract_dark_map : bool
-            Flag to subtract the dark map from the background estimate while it is still on the GPU.
+        convert_to_electrons: bool
+            Flag to camera-correct background and convert units from [ADU] to [e-]
 
         Returns
         -------
@@ -240,10 +248,14 @@ class Buffer(to_subclass):
 
 
 
-        if subtract_dark_map and self.dark_map_gpu:
+        if convert_to_electrons:
             warp_count_x = int(np.ceil(self.slice_shape[0] / 32.0))
-            self.subtract_b_from_a(self.cur_bg_gpu, self.dark_map_gpu,
-                                   block=(32, 1, 1), grid=(warp_count_x, self.slice_shape[1]), stream=self.bg_streamer)
+            # self.subtract_b_from_a(self.cur_bg_gpu, self.dark_map_gpu,
+            #                        block=(32, 1, 1), grid=(warp_count_x, self.slice_shape[1]), stream=self.bg_streamer)
+            # do this in the same stream as the background calculation
+            self.raw_adu_to_electrons(self.cur_bg_gpu, self.darkmap_gpu, self.flatmap_gpu,
+                                      np.int32(self.electrons_per_count), block=(32, 1, 1),
+                                      grid=(warp_count_x, self.slice_shape[1]), stream=self.bg_streamer)
 
         # NB - this function does not wait for the calculation to finish before returning, and does not copy anything
         # back to the GPU!

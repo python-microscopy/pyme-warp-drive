@@ -65,6 +65,19 @@ __global__ void update_frame(float *frames, float *new_frame, const int frame_nu
     a[blockIdx.y + gridDim.y * dim0_pixel] -= b[blockIdx.y + gridDim.y * dim0_pixel];
 }
 
+ __global__ void raw_adu_to_electrons(float *data, float *darkmap, float *flatmap, const float electrons_per_count)
+/*
+    To be executed with one warp per block (32 threads)
+    block=(32, 1, 1), grid=(warp_count_x, slice_shape[1])
+*/
+{
+    //    int data_loc;
+    int dim0_pixel = blockDim.x * blockIdx.x + threadIdx.x;
+    int ind = blockIdx.y + gridDim.y * dim0_pixel;
+
+    data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count;
+}
+
 
 __global__ void nth_value_by_pixel_search_sort(float *frames, const int n, float *nth_values)
 /*
