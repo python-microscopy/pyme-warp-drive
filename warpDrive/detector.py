@@ -10,6 +10,7 @@ import pycuda.autoinit
 import pycuda.tools
 import numpy as np
 from .detector_cu import *
+from . import source_prepare
 
 def norm_uniform_filter(length):
     """
@@ -66,6 +67,9 @@ class detector(object):
         self.num_streams = len(self.streams)
 
         ###################### Compile CUDA code ######################
+        self._prepare_mod = source_prepare.prepare()
+        self.prep_variance_over_gain_squared = self._prepare_mod.get_function('variance_over_gain_squared')
+        self.correct_frame_and_estimate_noise = self._prepare_mod.get_function('correct_frame_and_estimate_noise')
         # compile smoothing code
         self.smoothmod = detectorCompileNBlock_sCMOS()
         self.rfunc_v = self.smoothmod.get_function("convRowGPU_var")
@@ -83,8 +87,9 @@ class detector(object):
 
         # compile fit
         self.fitmod = gaussMLE_Fang_David()
-        self.gaussAstig = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig")
-        self.gaussAstigBkgndSub = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig_subBkgnd")
+        # self.gaussAstig = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig")
+        # self.gaussAstigBkgndSub = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig_subBkgnd")
+        self.pix_threads_astig_bkgndsub_mle = self.fitmod.get_function('pix_threads_astig_bkgndsub_mle')
 
         # print information about selected GPU
         print('Name: %s' % self.dev.name())
@@ -136,11 +141,10 @@ class detector(object):
         self.candPos_gpu = cuda.mem_alloc(self.candPos.size*self.candPos.dtype.itemsize)
         cuda.memcpy_htod(self.candPos_gpu, self.candPos)
 
-
-        # for troubleshooting:
-        self.dtarget = np.zeros(self.dshape, dtype=np.float32)
-
-        self.gain_gpu = cuda.mem_alloc(self.dsize)
+        self.darkmap_gpu = cuda.mem_alloc(self.dsize)
+        self.flatmap_gpu = cuda.mem_alloc(self.dsize)
+        self.varmap_gpu = cuda.mem_alloc(self.dsize)
+        self.variance_over_gain_squared_gpu = cuda.mem_alloc(self.dsize)
 
 
         #FIXME: not calculating CRLB (i.e. calcCRLB=0) causes an error
@@ -164,10 +168,13 @@ class detector(object):
         self.dummyPosChunk = np.zeros(self.fitChunkSize, dtype=np.int32)
         self.candPosChunk_gpu = cuda.mem_alloc(self.dummyPosChunk.size*self.dummyPosChunk.dtype.itemsize)
 
+        # for troubleshooting:
+        self.dtarget = np.zeros(self.dshape, dtype=np.float32)
 
-    def prepvar(self, varmap, flatmap, electrons_per_count):
+
+    def prepare_maps(self, darkmap, varmap, flatmap, electrons_per_count):
         """
-        prepvar sends the variance and gain maps to the GPU, where they will remain. This function must be called before
+        sends the variance and gain maps to the GPU, where they will remain. This function must be called before
         smoothFrame. When the FOV is shifted, this must be called again in order to update the camera maps held by the
         GPU.
 
@@ -190,6 +197,18 @@ class detector(object):
 
         self.varmap = varmap
 
+        cuda.memcpy_htod_async(self.flatmap_gpu, np.ascontiguousarray(flatmap, dtype=np.float32),
+                               stream=self.vstreamer1)
+        cuda.memcpy_htod_async(self.varmap_gpu, np.ascontiguousarray(self.varmap, dtype=np.float32),
+                               stream=self.vstreamer1)
+        cuda.memcpy_htod_async(self.darkmap_gpu, np.ascontiguousarray(darkmap, dtype=np.float32),
+                               stream=self.vstreamer1)  # TODO - can we optimize streams here?
+        self.prep_variance_over_gain_squared(self.varmap_gpu, self.flatmap_gpu, np.float32(electrons_per_count),
+                                             self.variance_over_gain_squared_gpu, block=(self.ncolumns, 1, 1),
+                                             grid=(self.nrows, 1), stream=self.vstreamer1)
+
+
+        # FIXME - remove "gain_gpu" and simplify units in filter.cu
         # note that PYME-style flatmaps are unitless, need to convert to gain in units of [ADU/e-]
         cuda.memcpy_htod_async(self.gain_gpu,
                                np.ascontiguousarray(1. / (electrons_per_count * flatmap), dtype=np.float32),
@@ -224,7 +243,17 @@ class detector(object):
         #cuda.memcpy_dtoh(self.dtarget, self.unif1v_gpu)
         #plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
 
-    def smoothFrame(self, photondat, bkgnd=None):
+    def prepare_frame(self, data, noise_factor, electrons_per_count, em_gain=1.0):
+        self.data = np.ascontiguousarray(data, dtype=np.float32)
+        cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
+        self.correct_frame_and_estimate_noise(self.data_gpu, self.varmap_gpu, self.darkmap_gpu, self.flatmap_gpu,
+                                              np.float32(noise_factor), np.float32(electrons_per_count),
+                                              np.float(em_gain), self.noise_sigma_gpu, block=(self.ncolumns, 1, 1),
+                                              grid=(self.nrows, 1), stream=self.dstreamer1)
+        # fixme - check stream here
+
+
+    def difference_of_gaussian_filter(self, data, background=None):
         """
         smoothFrame passes a single frame of data to the GPU, and performs two 2D convolutions with different kernel
         sizes before subtracting the two. This is done in a variance-weighted fashion. For description, see supplemental
@@ -241,9 +270,9 @@ class detector(object):
         #print('Data: mu = %f +- %f' % (np.mean(photondat), np.std(photondat)))
         #print('Background: %s' % (bkgnd is None))
         # make sure that the data is contiguous, and send to GPU
-        self.data = np.ascontiguousarray(photondat, dtype=np.float32)
+        self.data = np.ascontiguousarray(data, dtype=np.float32)
         cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
-        if bkgnd is None:
+        if background is None:
             # note that background array of zeros has already been sent to the GPU in allocateMem()
 
             # assign fit function for non-bkgnd subtraction case
@@ -251,21 +280,21 @@ class detector(object):
         else:  # background is either already on the GPU or was passed to this function
             try:
                 # if we have the gpu buffer, check that the calculation is finished
-                bkgnd.sync_calculation()
+                background.sync_calculation()
                 # pass off the pointer to the device memory
-                self.bkgnd_gpu = bkgnd.cur_bg_gpu
+                self.bkgnd_gpu = background.cur_bg_gpu
             except AttributeError:
-                # background should be array, pass it to the GPU now
-                #print('Background: mu = %f +- %f' % (np.mean(bkgnd), np.std(bkgnd)))
+                # background should be array, pass it to the GPU now. FIXME - make sure background is in [e-] here
                 # send bkgnd via stream 1 because in current implementation, bkgnd is needed in row convolution
-                cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(bkgnd, dtype=np.float32),
+                cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(background, dtype=np.float32),
                                        stream=self.dstreamer1)
+
                 # assign our fit function
-            self.fitFunc = self.gaussAstigBkgndSub
+            self.fitFunc = self.pix_threads_astig_bkgndsub_mle
 
         # make sure data is on the GPU before taking convolutions (otherwise dstreamer2 could potentially fire too soon)
         self.dstreamer1.synchronize()
-
+        # FIXME - simplify units in filter.cu
         ############################# row convolutions ###################################
         self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.gain_gpu, self.filter1_gpu,
                    self.halfFiltBig, self.n_columns, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
@@ -302,6 +331,7 @@ class detector(object):
         # maxFilter size will be 2*halfMaxFilt + 1
         self.halfMaxFilt = np.int32(np.floor(0.5*ROISize) - 1)
 
+        # fixme - make sure units on findpeaks.cu are all set once filter.cu is consistent
         # take maximum filter
         self.maxfrow(self.unif1_gpu, self.maxfData_gpu, self.n_columns, self.halfMaxFilt, block=(self.ncolumns, 1, 1),
                      grid=(self.nrows, 1), stream=self.dstreamer1)
@@ -350,7 +380,7 @@ class detector(object):
         # Pull candidates back to host so we can insert them chunk by chunk into the fit
         cuda.memcpy_dtoh_async(self.candPos, self.candPos_gpu, stream=self.dstreamer1)
         # self.dstreamer1.synchronize()
-
+        # fixme - make this work with unit-simplified and var/gain^2 pre-calc mle
         stream_counter = 0
         indy = 0
         while indy < self.candCount:
