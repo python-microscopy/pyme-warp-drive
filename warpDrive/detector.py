@@ -47,6 +47,7 @@ class detector(object):
         Initialize PyCUDA and compile CUDA functions. All CUDA functions will be run in the default context
         in several streams initialized here.
         """
+        self.iterations = np.int32(200)
 
         self.dfilterBig = norm_uniform_filter(large_filter_size)
         self.dfilterSmall = norm_uniform_filter(small_filter_size)
@@ -378,8 +379,9 @@ class detector(object):
         """
 
         # Pull candidates back to host so we can insert them chunk by chunk into the fit
+        # fixme - surely we can eliminate this back-and-forth transfer
         cuda.memcpy_dtoh_async(self.candPos, self.candPos_gpu, stream=self.dstreamer1)
-        # self.dstreamer1.synchronize()
+        self.dstreamer1.synchronize()
         # fixme - make this work with unit-simplified and var/gain^2 pre-calc mle
         stream_counter = 0
         indy = 0
@@ -396,10 +398,10 @@ class detector(object):
             cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=to_use)
 
             # note that which fitFunc we use has already been decided by whether background was subtracted in detection
-            self.fitFunc(self.data_gpu, self.guess_psf_sigma, np.int32(200),
-                    self.dpars_gpu, self.CRLB_gpu, self.LLH_gpu, self.invvar_gpu, self.gain_gpu,
-                    self.calcCRLB, self.candPosChunk_gpu, np.int32(self.ncolumns), np.int32(0), self.bkgnd_gpu,  # self.testROI_gpu,
-                    block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
+            self.fitFunc(self.data_gpu, self.guess_psf_sigma, self.iterations, self.dpars_gpu, self.CRLB_gpu,
+                         self.LLH_gpu, self.variance_over_gain_squared_gpu, self.calcCRLB, self.candPosChunk_gpu,
+                         self.ncolumns, self.bkgnd_gpu,  # self.testROI_gpu,
+                         block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
 
 
             cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=to_use)
