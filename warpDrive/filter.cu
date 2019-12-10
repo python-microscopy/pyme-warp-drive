@@ -110,8 +110,31 @@ Each row is loaded into shared memory before the convolution is performed.
 
 }
 
-__global__ void convRowGPU(float *data, float *var, float *rconvdata, float *gain, float *filter,// const int rowsize,
-int halfFilt, const int colsize, float *bkgnd)
+__global__ void convRowGPU(float *data, float *var, float *rconvdata, float *filter,// const int rowsize,
+int halfFilt, const int colsize, float *background)
+/*
+    Perform the first part of a separable convolution. FIXME - finish this description
+
+    Parameters
+    ----------
+    data: input data, camera-corrected and converted to units of e-
+    var: (per-pixel) variance due to readout noise [e-^2]
+    rconvdata: memory allocation to store result
+
+
+    CUDA indexing
+    -------------
+    block
+        x: n_columns
+            size[1] of the variance map
+    grid
+        x: n_rows
+            size[0] of the variance map
+
+    Notes
+    -----
+    Note that the PYME.remFitBuf.fitTask.calcSigma returns variance in [ADU^2] while here we return in e-^2
+*/
 /*
 This function takes input data, subtracts the pixel-dependent background estimate, converts the data from units of ADU
 to photoelectrons and performs a row convolution. The convolution is stored in a separate output array.
@@ -134,7 +157,7 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
     }
     // load row of data into shared mem and subtract background
-    rdata_sh[j + halfFilt] = (data[rid*colsize + j] - bkgnd[rid*colsize + j])/(var[rid*colsize + j]*gain[rid*colsize + j]);
+    rdata_sh[j + halfFilt] = (data[rid*colsize + j] - background[rid*colsize + j])/var[rid*colsize + j];
     if (j < (2*halfFilt)) filter_sh[j] = filter[j];
 
     // make sure we're ready to convolve
