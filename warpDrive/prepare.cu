@@ -20,8 +20,8 @@ __global__ void var_e_to_invvar_adu(float *var_e, float *inv_var_adu, const floa
             size[0] of the variance map
 */
 {
-    int ind = blockIdx.x * colsize + threadIdx.x;
-    inv_var_adu[ind] = 1 / (var_e / (electrons_per_count * electrons_per_count));
+    int ind = blockIdx.x * gridDim.x + threadIdx.x;
+    inv_var_adu[ind] = 1.0f / (var_e[ind] / (electrons_per_count * electrons_per_count));
 }
 
 
@@ -53,14 +53,14 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
     Note that the PYME.remFitBuf.fitTask.calcSigma returns variance in [ADU^2] while here we return in e-^2
 */
 {
-    int ind = blockIdx.x * colsize + threadIdx.x;
+    int ind = blockIdx.x * gridDim.x + threadIdx.x;
     sigma[ind] = sqrt(readnoise_var[ind]
-                      + noise_factor * noise_factor * electrons_per_count * em_gain * fmaxf(data[ind], 1.0)
+                      + noise_factor * noise_factor * electrons_per_count * em_gain * fmaxf(data[ind], 1.0f)
                       + em_gain * em_gain / electrons_per_count);
 }
 
-__device__ float estimate_noise_standard_deviation(const float data, const float readnoise_var,
-const float noise_factor, const float electrons_per_count, const float em_gain, const float sigma)
+__device__ float d_estimate_noise_standard_deviation(float data, float readnoise_var, const float noise_factor,
+const float electrons_per_count, const float em_gain)
 /*
     Estimate a per-pixel noise standard deviation.
 
@@ -82,7 +82,7 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
 */
 {
     return sqrt(readnoise_var
-                + noise_factor * noise_factor * em_gain * fmaxf(data, 1.0)
+                + noise_factor * noise_factor * em_gain * fmaxf(data, 1.0f)
                 + em_gain * em_gain / electrons_per_count);
 }
 
@@ -124,7 +124,7 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
     data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count;  // [ADU] -> [e-]
 
     // estimate noise
-    sigma[ind] = estimate_noise_standard_deviation(data[ind], readnoise_var[ind], noise_factor, electrons_per_count,
+    sigma[ind] = d_estimate_noise_standard_deviation(data[ind], readnoise_var[ind], noise_factor, electrons_per_count,
                                                    em_gain);
 }
 
@@ -186,9 +186,9 @@ float *variance_over_gain_squared)
     can be ignored due to the expectation and variance of a Poisson distribution both being the rate constant.
 */
 {
-    int ind = blockIdx.x * colsize + threadIdx.x;
+    int ind = blockIdx.x * gridDim.x + threadIdx.x;
 
     // d - o / g = (d - o) * flatfield * electrons_per_count
-    variance_over_gain_squared[ind] = readnoise_var * pow(flatmap * electrons_per_count, 2);
+    variance_over_gain_squared[ind] = readnoise_var[ind] * powf(flatmap[ind] * electrons_per_count, 2.0f);
 }
 
