@@ -56,18 +56,22 @@ class Buffer(to_subclass):
 
         # camera correction ~hack. TODO make gpu camera map manager
         self.electrons_per_count = electrons_per_count
-        self.darkmap_gpu, self.flatmap_gpu, self.varmap_gpu = None, None, None
+        self.darkmap_gpu, self.flatmap_gpu = None, None
+        map_mem_size = pix_r * pix_c * self.cur_bg.dtype.itemsize
         if darkmap is not None:
             if np.isscalar(darkmap):
                 darkmap = darkmap * np.ones((self.slice_shape))
 
-            map_mem_size = pix_r * pix_c * self.cur_bg.dtype.itemsize
             self.darkmap_gpu = cuda.mem_alloc(map_mem_size)
             cuda.memcpy_htod(self.darkmap_gpu, np.ascontiguousarray(darkmap, dtype=np.float32))
 
+        if flatmap is not None:
             if np.isscalar(flatmap):
                 flatmap = flatmap * np.ones((self.slice_shape))
+
+            self.flatmap_gpu = cuda.mem_alloc(map_mem_size)
             cuda.memcpy_htod(self.flatmap_gpu, np.ascontiguousarray(flatmap, dtype=np.float32))
+
 
         #---- compile
         print('compiling!\n')
