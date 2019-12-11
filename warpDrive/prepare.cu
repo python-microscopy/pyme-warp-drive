@@ -108,7 +108,7 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
     -------------
     Max number of threads per block is 1024 for pretty much all cards. Memory is row-major, so we coalesce if we use the
     1-d block to read along the row of the image, and use the block index to read along columns. Note that the maximum
-    size of data is limited to [1024, 2^31 − 1] for pretty much all cards.
+    size of data is limited to [1024, 2^31 - 1] for pretty much all cards.
     block
         x: data.shape[0]
     grid
@@ -144,7 +144,7 @@ const float electrons_per_count)
     -------------
     Max number of threads per block is 1024 for pretty much all cards. Memory is row-major, so we coalesce if we use the
     1-d block to read along the row of the image, and use the block index to read along columns. Note that the maximum
-    size of data is limited to [1024, 2^31 − 1] for pretty much all cards.
+    size of data is limited to [1024, 2^31 - 1] for pretty much all cards.
     block
         x: data.shape[0]
     grid
