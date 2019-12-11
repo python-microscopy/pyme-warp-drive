@@ -214,8 +214,8 @@ class detector(object):
 
         # precalculate a per-pixel constant we'll use in the fit later. OK to leave this unsynced until later
         self.prep_variance_over_gain_squared(self.varmap_gpu, self.flatmap_gpu, np.float32(electrons_per_count),
-                                             self.variance_over_gain_squared_gpu, block=(self.ncolumns, 1, 1),
-                                             grid=(self.nrows, 1), stream=self.vstreamer2)
+                                             self.variance_over_gain_squared_gpu, block=(self.nrows, 1, 1),
+                                             grid=(self.ncolumns, 1), stream=self.vstreamer2)
 
         # send our filters to device
         cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.vstreamer1)

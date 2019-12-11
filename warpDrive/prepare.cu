@@ -173,11 +173,11 @@ float *variance_over_gain_squared)
     CUDA indexing
     -------------
     block
-        x: n_columns
-            size[1] of the variance map
-    grid
         x: n_rows
             size[0] of the variance map
+    grid
+        x: n_columns
+            size[1] of the variance map
 
     Notes
     -----
