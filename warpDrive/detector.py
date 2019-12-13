@@ -404,7 +404,7 @@ class detector(object):
             # note that which fitFunc we use has already been decided by whether background was subtracted in detection
             self.fitFunc(self.data_gpu, self.guess_psf_sigma, self.iterations, self.dpars_gpu, self.CRLB_gpu,
                          self.LLH_gpu, self.variance_over_gain_squared_gpu, self.calcCRLB, self.candPosChunk_gpu,
-                         self.ncolumns, self.bkgnd_gpu,  # self.testROI_gpu,
+                         self.n_columns, self.bkgnd_gpu,  # self.testROI_gpu,
                          block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
 
 

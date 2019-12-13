@@ -951,7 +951,7 @@ __global__ void kernel_MLEFit_pix_threads_astig_subBkgnd(float *d_data, float PS
 
 __global__ void pix_threads_astig_bkgndsub_mle(float *data_e, float psf_sigma, int iterations,
         float *fit_results, float *cramer_rao_bounds, float *log_likelihood, float *variance_over_gain_squared,
-         int calc_crb, int *candidate_ind, int n_columns, float *background){
+         const int calc_crb, int *candidate_ind, const int n_columns, float *background){
 /*
 
     Parameters
