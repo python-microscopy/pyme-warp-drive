@@ -150,7 +150,7 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
     __shared__ float filter_sh[12];
 
     // Pad the shared memory array
-    if (threadIdx.x < (halfFilt)){
+    if (threadIdx.x < (half_filter_size)){
         rdata_sh[threadIdx.x] = 0;
         rdata_sh[blockDim.x + threadIdx.x + half_filter_size] = 0;
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
