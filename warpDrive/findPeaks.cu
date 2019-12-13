@@ -137,7 +137,7 @@ int *candidate_indices, const int max_cand_count, const int half_roi_size, float
             size[0] of the data frame
 */
 {
-    int dloc = blockIdx.x * gridDim.x + threadIdx.x;
+    int dloc = blockIdx.x * blockDim.x + threadIdx.x;
     int temp_ind;
     // multiply threshold factor by the noise standard deviation
     float threshold = thresh_factor * noise_sigma[dloc];
