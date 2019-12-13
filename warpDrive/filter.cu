@@ -111,7 +111,7 @@ Each row is loaded into shared memory before the convolution is performed.
 }
 
 __global__ void convRowGPU(float *data, float *var, float *row_convolved_data, float *filter,// const int rowsize,
-int half_filter_size, const int n_columns, float *background)
+int half_filter_size, float *background)
 /*
     Perform the first part of a separable convolution. FIXME - finish this description
 
@@ -142,19 +142,17 @@ Each row is loaded into shared memory before the convolution is performed. Curre
 be convolved by this function is 1024x1024, because each pixel is assigned its own thread.
 */
 {
-    int k; //, halfFiltm1 = halfFilt-1;
-    int ind = blockIdx.x *n_columns + threadIdx.x;
-//    int rid = blockIdx.x;
-//    int j = threadIdx.x;
+    int k;
+    int ind = blockIdx.x * blockDim.x + threadIdx.x;
     float temp_sum = 0;
 
-    volatile __shared__ float rdata_sh[1075]; //should be changed to colsize (PADDED SIZE, or larger)
+    volatile __shared__ float rdata_sh[1075]; //should be changed to blockDim.x (PADDED SIZE, or larger)
     __shared__ float filter_sh[12];
 
     // Pad the shared memory array
     if (threadIdx.x < (halfFilt)){
         rdata_sh[threadIdx.x] = 0;
-        rdata_sh[n_columns + j + half_filter_size] = 0;
+        rdata_sh[blockDim.x + threadIdx.x + half_filter_size] = 0;
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
     }
     // load row of data into shared mem and subtract background
