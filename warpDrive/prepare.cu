@@ -20,7 +20,7 @@ __global__ void var_e_to_invvar_adu(float *var_e, float *inv_var_adu, const floa
             size[0] of the variance map
 */
 {
-    int ind = blockIdx.x * gridDim.x + threadIdx.x;
+    int ind = blockIdx.x * blockDim.x + threadIdx.x;
     inv_var_adu[ind] = 1.0f / (var_e[ind] / (electrons_per_count * electrons_per_count));
 }
 
@@ -53,7 +53,7 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
     Note that the PYME.remFitBuf.fitTask.calcSigma returns variance in [ADU^2] while here we return in e-^2
 */
 {
-    int ind = blockIdx.x * gridDim.x + threadIdx.x;
+    int ind = blockIdx.x * blockDim.x + threadIdx.x;
     sigma[ind] = sqrt(readnoise_var[ind]
                       + noise_factor * noise_factor * electrons_per_count * em_gain * fmaxf(data[ind], 1.0f)
                       + em_gain * em_gain / electrons_per_count);
@@ -119,7 +119,8 @@ const float noise_factor, const float electrons_per_count, const float em_gain, 
     Note that the PYME.remFitBuf.fitTask.calcSigma returns variance in [ADU^2] while here we return in e-^2
 */
 {
-    int ind = blockIdx.x * gridDim.x + threadIdx.x;
+    int ind = blockIdx.x * blockDim.x + threadIdx.x;
+
     // camera-correct data, and convert units
     data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count;  // [ADU] -> [e-]
 
@@ -151,7 +152,7 @@ const float electrons_per_count)
         x: data.shape[1]
 */
 {
-    int ind = blockIdx.x * gridDim.x + threadIdx.x;
+    int ind = blockIdx.x * blockDim.x + threadIdx.x;
     // camera-correct data, and convert units
     data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count;  // [ADU] -> [e-]
 }
@@ -186,7 +187,7 @@ float *variance_over_gain_squared)
     can be ignored due to the expectation and variance of a Poisson distribution both being the rate constant.
 */
 {
-    int ind = blockIdx.x * gridDim.x + threadIdx.x;
+    int ind = blockIdx.x * blockDim.x + threadIdx.x;
 
     // d - o / g = (d - o) * flatfield * electrons_per_count
     variance_over_gain_squared[ind] = readnoise_var[ind] * powf(flatmap[ind] * electrons_per_count, 2.0f);
