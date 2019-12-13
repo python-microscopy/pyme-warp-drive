@@ -71,12 +71,12 @@ class detector(object):
         self._prepare_mod = source_prepare.prepare()
         self.prep_variance_over_gain_squared = self._prepare_mod.get_function('variance_over_gain_squared')
         self.raw_adu_to_e_and_estimate_noise = self._prepare_mod.get_function('raw_adu_to_e_and_estimate_noise')
-        # compile smoothing code
-        self.smoothmod = detectorCompileNBlock_sCMOS()
-        self.rfunc_v = self.smoothmod.get_function("convRowGPU_var")
-        self.rfunc = self.smoothmod.get_function("convRowGPU")
-        self.cfunc = self.smoothmod.get_function("convColGPU")
-        self.smoothIm = self.smoothmod.get_function("smoothImGPU")
+        # compile difference-of-gaussian filters
+        self.dog_mod = detectorCompileNBlock_sCMOS()
+        self.dog_row_variance = self.dog_mod.get_function("dog_row_variance_convolution")
+        self.dog_row = self.dog_mod.get_function("dog_row_convolution")
+        self.dog_column = self.dog_mod.get_function("dog_column_convolution")
+        self.weighted_dog = self.dog_mod.get_function("weighted_difference_of_gaussian_subtraction")
 
         # compile finding code
         self.findmod = finderCompile()
@@ -225,18 +225,18 @@ class detector(object):
         self.vstreamer1.synchronize()
 
         # Take row convolutions
-        self.rfunc_v(self.varmap_gpu, self.unif1v_gpu, self.filter1_gpu,
+        self.dog_row_variance(self.varmap_gpu, self.unif1v_gpu, self.filter1_gpu,
                      self.halfFiltBig, self.n_columns, block=(self.ncolumns, 1, 1),
                      grid=(self.nrows, 1), stream=self.vstreamer1)
 
-        self.rfunc_v(self.varmap_gpu, self.unif2v_gpu, self.filter2_gpu,
+        self.dog_row_variance(self.varmap_gpu, self.unif2v_gpu, self.filter2_gpu,
                      self.halfFiltSmall, self.n_columns, block=(self.ncolumns, 1, 1),
                      grid=(self.nrows, 1), stream=self.vstreamer2)
 
         # Take column convolutions
-        self.cfunc(self.unif1v_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
+        self.dog_column(self.unif1v_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
                    block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.vstreamer1)
-        self.cfunc(self.unif2v_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
+        self.dog_column(self.unif2v_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
                    block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.vstreamer2)
 
         # make sure we're done before returning
@@ -300,18 +300,18 @@ class detector(object):
         # make sure self.prepare_frame() is finished, and if applicable, CPU background is on the GPU
         self.dstreamer1.synchronize()
         ############################# row convolutions ###################################
-        self.rfunc(self.data_gpu, self.invvar_gpu, self.unif1_gpu, self.gain_gpu, self.filter1_gpu,
-                   self.halfFiltBig, self.n_columns, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
+        self.dog_row(self.data_gpu, self.varmap_gpu, self.unif1_gpu, self.filter1_gpu,
+                   self.halfFiltBig, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
                    grid=(self.nrows, 1), stream=self.dstreamer1)
 
-        self.rfunc(self.data_gpu, self.invvar_gpu, self.unif2_gpu, self.gain_gpu, self.filter2_gpu,
-                   self.halfFiltSmall, self.n_columns, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
+        self.dog_row(self.data_gpu, self.varmap_gpu, self.unif2_gpu, self.filter2_gpu,
+                   self.halfFiltSmall, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
                    grid=(self.nrows, 1), stream=self.dstreamer2)
 
         ############################# column convolutions ###################################
-        self.cfunc(self.unif1_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
+        self.dog_column(self.unif1_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
                    block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.dstreamer1)
-        self.cfunc(self.unif2_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
+        self.dog_column(self.unif2_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
                    block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.dstreamer2)
 
         # dstreamer1 does not need to be synced because next call is in that stream.
@@ -319,7 +319,7 @@ class detector(object):
 
         ############################# generate and subtract smooth iamges ###################################
         # (float *unifsmalldat,  float *unifsmallvar, float *uniflargedat, float *uniflargevar,int colsize, int halfFilt)
-        self.smoothIm(self.unif1_gpu, self.unif1v_gpu, self.unif2_gpu, self.unif2v_gpu, self.n_columns,
+        self.weighted_dog(self.unif1_gpu, self.unif1v_gpu, self.unif2_gpu, self.unif2v_gpu, self.n_columns,
                       self.halfFiltBig, block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.dstreamer1)
 
         # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in dstreamer1

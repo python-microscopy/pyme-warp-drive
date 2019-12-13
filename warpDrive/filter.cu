@@ -6,7 +6,7 @@ Andrew Barentine - Spring 2016
 
 #include <stdio.h>
 
-__global__ void convRowGPU_var(float *var, float *rconvdata, float *filter,// const int rowsize,
+__global__ void dog_row_variance_convolution(float *var, float *rconvdata, float *filter,// const int rowsize,
 int halfFilt, const int colsize)
 /*
 This function takes input data and performs a row convolution. The convolution is stored in a separate
@@ -110,7 +110,7 @@ Each row is loaded into shared memory before the convolution is performed.
 
 }
 
-__global__ void convRowGPU(float *data, float *var, float *row_convolved_data, float *filter,// const int rowsize,
+__global__ void dog_row_convolution(float *data, float *var, float *row_convolved_data, float *filter,// const int rowsize,
 int half_filter_size, float *background)
 /*
     Perform the first part of a separable convolution. FIXME - finish this description
@@ -171,7 +171,7 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
 }
 
 
-__global__ void convColGPU(float *data,  float *filter, int rowsize, int colsize, int halfFilt)
+__global__ void dog_column_convolution(float *data,  float *filter, int rowsize, int colsize, int halfFilt)
 {
 /*
 This function takes input data (row convolved data) and performs a column convolution. The convolution results are
@@ -212,7 +212,7 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
     data[cid + j*colsize] = tempsum;
 }
 
-__global__ void smoothImGPU(float *uniflargedat, float *uniflargevar, float *unifsmalldat,  float *unifsmallvar,
+__global__ void weighted_difference_of_gaussian_subtraction(float *uniflargedat, float *uniflargevar, float *unifsmalldat,  float *unifsmallvar,
 int colsize, int halfFilt)
 {
 /*
