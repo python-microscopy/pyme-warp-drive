@@ -110,8 +110,8 @@ Each row is loaded into shared memory before the convolution is performed.
 
 }
 
-__global__ void convRowGPU(float *data, float *var, float *rconvdata, float *filter,// const int rowsize,
-int halfFilt, const int colsize, float *background)
+__global__ void convRowGPU(float *data, float *var, float *row_convolved_data, float *filter,// const int rowsize,
+int half_filter_size, const int n_columns, float *background)
 /*
     Perform the first part of a separable convolution. FIXME - finish this description
 
@@ -142,33 +142,34 @@ Each row is loaded into shared memory before the convolution is performed. Curre
 be convolved by this function is 1024x1024, because each pixel is assigned its own thread.
 */
 {
-    int k, halfFiltm1 = halfFilt-1;
-    int rid = blockIdx.x;
-    int j = threadIdx.x;
-    float tempsum = 0;
+    int k; //, halfFiltm1 = halfFilt-1;
+    int ind = blockIdx.x *n_columns + threadIdx.x;
+//    int rid = blockIdx.x;
+//    int j = threadIdx.x;
+    float temp_sum = 0;
 
     volatile __shared__ float rdata_sh[1075]; //should be changed to colsize (PADDED SIZE, or larger)
     __shared__ float filter_sh[12];
 
     // Pad the shared memory array
-    if (j < (halfFilt)){
-        rdata_sh[j] = 0;
-        rdata_sh[colsize + j + halfFilt] = 0;
+    if (threadIdx.x < (halfFilt)){
+        rdata_sh[threadIdx.x] = 0;
+        rdata_sh[n_columns + j + half_filter_size] = 0;
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
     }
     // load row of data into shared mem and subtract background
-    rdata_sh[j + halfFilt] = (data[rid*colsize + j] - background[rid*colsize + j])/var[rid*colsize + j];
-    if (j < (2*halfFilt)) filter_sh[j] = filter[j];
+    rdata_sh[threadIdx.x + half_filter_size] = (data[ind] - background[ind])/var[ind];
+    if (threadIdx.x < (2 * half_filter_size)) filter_sh[threadIdx.x] = filter[threadIdx.x];
 
     // make sure we're ready to convolve
     __syncthreads();
 
     // perform convolution
-    for (k = -halfFilt; k <= halfFiltm1; k++){
-        tempsum += rdata_sh[(j + halfFilt) - k]*filter_sh[k + halfFilt];
+    for (k = -half_filter_size; k <= half_filter_size - 1; k++){
+        temp_sum += rdata_sh[(threadIdx.x + half_filter_size) - k]*filter_sh[k + half_filter_size];
     }
     // push results to output array
-    rconvdata[rid*colsize + j] = tempsum;
+    row_convolved_data[ind] = temp_sum;
 }
 
 
