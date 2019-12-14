@@ -102,7 +102,7 @@ class detector(object):
         #sharedinfo = self.context.get_shared_config()
         #print sharedinfo
 
-    def allocateMem(self, dshape, ditemsize):
+    def allocate_memory(self, dshape, ditemsize):
         """
         Allocate memory on the GPU. These allocations will be held until the detector object is destroyed.
         """
@@ -150,7 +150,7 @@ class detector(object):
 
 
         #FIXME: not calculating CRLB (i.e. calcCRLB=0) causes an error
-        self.calcCRLB = np.int32(1)
+        self.calculate_crb = np.int32(1)
 
 
         self.dparsZ = np.zeros(6*self.fitChunkSize, dtype=np.float32)
@@ -403,7 +403,7 @@ class detector(object):
 
             # note that which fitFunc we use has already been decided by whether background was subtracted in detection
             self.fitFunc(self.data_gpu, self.guess_psf_sigma, self.iterations, self.dpars_gpu, self.CRLB_gpu,
-                         self.LLH_gpu, self.variance_over_gain_squared_gpu, self.calcCRLB, self.candPosChunk_gpu,
+                         self.LLH_gpu, self.variance_over_gain_squared_gpu, self.calculate_crb, self.candPosChunk_gpu,
                          self.n_columns, self.bkgnd_gpu,  # self.testROI_gpu,
                          block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
 
