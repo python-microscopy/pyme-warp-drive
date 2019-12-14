@@ -1,7 +1,7 @@
 
 from PYME.IO.DataSources.RandomDataSource import DataSource
 from PYME.IO.buffers import dataBuffer
-from warpDrive.buffers import Buffer
+from warpdrive.buffers import Buffer
 import numpy as np
 
 class IOErrorDataBuffer(object):

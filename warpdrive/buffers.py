@@ -393,7 +393,7 @@ def main():
             pass
 
         from PYME.IO.DataSources.RandomDataSource import DataSource
-        from warpDrive.buffers import Buffer
+        from warpdrive.buffers import Buffer
 
         percentile = 0.25
         # run a test
@@ -408,7 +408,7 @@ def main():
             pass
 
         from PYME.IO.DataSources.RandomDataSource import DataSource
-        from warpDrive.buffers import Buffer
+        from warpdrive.buffers import Buffer
 
         percentile = 0.25
         # run a test
