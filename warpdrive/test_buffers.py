@@ -53,7 +53,7 @@ def gpu_cpu_comparison(buffer_length, indices, g_buf=None):
 
     for bg_indices in indices:
         bg_cpu = get_cpu_background(bg_indices)
-        bg_gpu = g_buf.getBackground(bg_indices)
+        bg_gpu = g_buf.getBackground(bg_indices, convert_to_electrons=False)
 
         assert np.array_equal(bg_cpu, bg_gpu)
 
@@ -92,7 +92,7 @@ def simulate_IOError(buffer_length, fail_at):
         bg_cpu = get_cpu_background(bg_indices)
         # our poor gpu buffer, however, does not
         try:
-            bg_gpu = g_buf.getBackground(bg_indices)
+            bg_gpu = g_buf.getBackground(bg_indices, convert_to_electrons=False)
         except IOError:
             pass
         # if there is no error, then the two calculations should be identical

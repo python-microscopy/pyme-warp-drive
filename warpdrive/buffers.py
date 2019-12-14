@@ -305,7 +305,7 @@ class Buffer(to_subclass):
         """
         self.bg_streamer.synchronize()
 
-    def getBackground(self, bg_indices):
+    def getBackground(self, bg_indices, convert_to_electrons=True):
         """
 
         Calculates the background and waits for the calculation to terminate before returning the background estimate.
@@ -324,7 +324,7 @@ class Buffer(to_subclass):
         """
 
         # estimate the background
-        self.calc_background(bg_indices, convert_to_electrons=True)
+        self.calc_background(bg_indices, convert_to_electrons=convert_to_electrons)
         # bring it back from the GPU
         cuda.memcpy_dtoh_async(self.cur_bg, self.cur_bg_gpu, stream=self.bg_streamer)
 
