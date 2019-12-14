@@ -365,7 +365,7 @@ class detector(object):
         cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
 
 
-    def fitItToWinIt(self, ROISize=16):
+    def fit_candidates(self, ROISize=16):
         """
         This function runs David Baddeley's pixel-wise GPU fit, and is pretty darn fast. The fit is an MLE fit, with a
         noise-model which accounts for sCMOS statistics, i.e. a gaussian random variable (read-noise) added to a Poisson
