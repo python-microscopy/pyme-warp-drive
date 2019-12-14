@@ -89,7 +89,6 @@ class detector(object):
         # compile fit
         self.fitmod = gaussMLE_Fang_David()
         # self.gaussAstig = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig")
-        # self.gaussAstigBkgndSub = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig_subBkgnd")
         self.pix_threads_astig_bkgndsub_mle = self.fitmod.get_function('pix_threads_astig_bkgndsub_mle')
 
         # print information about selected GPU
@@ -278,10 +277,8 @@ class detector(object):
         # self.data = np.ascontiguousarray(data, dtype=np.float32)
         # cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
         if background is None:
-            # note that background array of zeros has already been sent to the GPU in allocateMem()
-
-            # assign fit function for non-bkgnd subtraction case
-            self.fitFunc = self.gaussAstig
+            # make sure background is zero'd on gpu
+            cuda.memcpy_htod(self.bkgnd_gpu, np.ascontiguousarray(np.zeros(self.dshape), dtype=np.float32))
         else:  # background is either already on the GPU or was passed to this function
             try:
                 # if we have the gpu buffer, pass off the pointer to the device memory
@@ -295,7 +292,7 @@ class detector(object):
                                        stream=self.dstreamer1)
 
                 # assign our fit function
-            self.fitFunc = self.pix_threads_astig_bkgndsub_mle
+            # self.fitFunc = self.pix_threads_astig_bkgndsub_mle
 
         # make sure self.prepare_frame() is finished, and if applicable, CPU background is on the GPU
         self.dstreamer1.synchronize()
@@ -402,7 +399,7 @@ class detector(object):
             cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=to_use)
 
             # note that which fitFunc we use has already been decided by whether background was subtracted in detection
-            self.fitFunc(self.data_gpu, self.guess_psf_sigma, self.iterations, self.dpars_gpu, self.CRLB_gpu,
+            self.pix_threads_astig_bkgndsub_mle(self.data_gpu, self.guess_psf_sigma, self.iterations, self.dpars_gpu, self.CRLB_gpu,
                          self.LLH_gpu, self.variance_over_gain_squared_gpu, self.calculate_crb, self.candPosChunk_gpu,
                          self.n_columns, self.bkgnd_gpu,  # self.testROI_gpu,
                          block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
