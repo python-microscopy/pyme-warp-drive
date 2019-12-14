@@ -324,7 +324,7 @@ class Buffer(to_subclass):
         """
 
         # estimate the background
-        self.calc_background(bg_indices, subtract_dark_map=False)
+        self.calc_background(bg_indices, convert_to_electrons=True)
         # bring it back from the GPU
         cuda.memcpy_dtoh_async(self.cur_bg, self.cur_bg_gpu, stream=self.bg_streamer)
 
