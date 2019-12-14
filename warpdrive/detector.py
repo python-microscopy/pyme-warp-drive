@@ -278,7 +278,8 @@ class detector(object):
         # cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
         if background is None:
             # make sure background is zero'd on gpu
-            cuda.memcpy_htod(self.bkgnd_gpu, np.ascontiguousarray(np.zeros(self.dshape), dtype=np.float32))
+            cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(np.zeros(self.dshape), dtype=np.float32),
+                                   stream=self.dstreamer1)
         else:  # background is either already on the GPU or was passed to this function
             try:
                 # if we have the gpu buffer, pass off the pointer to the device memory
