@@ -57,12 +57,27 @@ __global__ void update_frame(float *frames, float *new_frame, const int frame_nu
 /*
     To be executed with one warp per block (32 threads)
     block=(32, 1, 1), grid=(warp_count_x, slice_shape[1])
+    // FIXME - this indexing is problematic for, e.g. 257 x 256 data
 */
 {
     //    int data_loc;
     int dim0_pixel = blockDim.x * blockIdx.x + threadIdx.x;
 
     a[blockIdx.y + gridDim.y * dim0_pixel] -= b[blockIdx.y + gridDim.y * dim0_pixel];
+}
+
+ __global__ void raw_adu_to_electrons(float *data, float *darkmap, float *flatmap, const float electrons_per_count)
+/*
+    To be executed with one warp per block (32 threads)
+    block=(32, 1, 1), grid=(warp_count_x, slice_shape[1])
+    // FIXME - this indexing is problematic for, e.g. 257 x 256 data
+*/
+{
+    //    int data_loc;
+    int dim0_pixel = blockDim.x * blockIdx.x + threadIdx.x;
+    int ind = blockIdx.y + gridDim.y * dim0_pixel;
+
+    data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count;
 }
 
 

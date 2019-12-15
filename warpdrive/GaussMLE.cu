@@ -949,4 +949,344 @@ __global__ void kernel_MLEFit_pix_threads_astig_subBkgnd(float *d_data, float PS
     return;
 }
 
+__global__ void pix_threads_astig_bkgndsub_mle(float *data_e, float psf_sigma, int iterations,
+        float *fit_results, float *cramer_rao_bounds, float *log_likelihood, float *variance_over_gain_squared,
+         const int calc_crb, int *candidate_ind, const int n_columns, float *background){
+/*
 
+    Parameters
+    ----------
+    data_e: input data [e-]
+    psf_sigma: guess for psf width as a standard deviation [pixels]
+    iterations: number of iterations to perform before exit
+    fit_results: memory allocation to store output fit results
+        stuff
+    cramer_rao_bounds:
+    log_likelihood:
+    variance_over_gain_squared:
+    calc_crb:
+    candidate_ind:
+    n_columns:
+    n_candidate_start:
+    background: estimated (per-pixel) background [e-]
+
+    CUDA indexing
+    -------------
+    blockblock=(ROISize, ROISize, 1), grid=(numBlock, 1)
+        x: ROI size, size[0], in pixels
+        y: ROI size, size[1], in pixels
+    grid
+        x: n_fits
+            number of molecules to be fit with this kernel call (call looped over until all candidate molecules have
+            been localized in order to only occupy a single multiprocessor with this kernel per CPU thread)
+
+    Notes
+    -----
+*/
+
+
+    //these will store the data for the pixel being processed
+    float pixel_data;
+//    float pixel_variance;
+    float pixel_variance_over_gain_squared;
+    float pixel_bkgnd;
+
+    //allocate arrays for matrices
+    float M[NUM_VARS_ASTIG*NUM_VARS_ASTIG];
+    __shared__ float Diag[NUM_VARS_ASTIG];
+    float Minv[NUM_VARS_ASTIG*NUM_VARS_ASTIG];
+
+    //One block = one ROI
+    int BlockSize = blockDim.x*blockDim.y;
+    //int blockOffset = BlockSize*blockIdx.x; //the offset in memory to the current ROI
+    int pixelIndex = threadIdx.x + blockDim.x*threadIdx.y; //index of pixel in ROI
+
+
+
+    /*if (pixelIndex == 0){
+        printf("blockIdx.x: %d\n", blockIdx.x);
+        printf("BlockSize: %d\n", BlockSize);
+        printf("blockOffset: %d\n", blockOffset);
+    }*/
+
+    //float gain=0.45;
+    //int ii, jj, kk, ll;
+    int kk, ll;
+    float model, cf, df, data;
+    float Div;
+    float PSFy, PSFx;
+
+    volatile __shared__ float data_sum;
+
+    //Allocate arrays for the gradients etc ...
+    float dudt[NUM_VARS_ASTIG];
+    float d2udt2[NUM_VARS_ASTIG];
+
+    //two temporary arrays which are used whenever we want to reduce (sum, min, max)
+    //across threads
+    volatile __shared__ float s_temp0[BLOCK_MAX_SIZE];
+    volatile __shared__ float s_temp1[BLOCK_MAX_SIZE];
+
+    //The numerator and denominator for the update step. These are used from multiple threads, and need to be shared
+    volatile __shared__ float NR_Numerator[NUM_VARS_ASTIG];
+    volatile __shared__ float NR_Denominator[NUM_VARS_ASTIG];
+
+    //the parameter vector
+    volatile __shared__ float theta[NUM_VARS_ASTIG];
+
+    const float maxjump[NUM_VARS_ASTIG]={1e0, 1e0, 1e2, 2e0, 1e-1, 1e-1};
+    const float gamma[NUM_VARS_ASTIG]={1.0, 1.0, 0.5, 1.0, 1.0, 1.0};
+
+    //variable to store maximum intensity in ROI
+    float Nmax;
+
+    //Prevent read/write past end of array
+    //if ((bx*BlockSize+tx)>=Nfits) return;
+
+    //zero arrays (each thread zeros one location)
+    // As we have more pixels than entries in the matrix, we will only use the first NV*NV threads
+    // We've effectively parallized the loop across the threads
+    // CHECK - Do we still need to zero M (we now do the sum and then assign, rather than a progressive sum)
+    if (pixelIndex < NUM_VARS_ASTIG*NUM_VARS_ASTIG){
+        M[pixelIndex] = 0;
+        Minv[pixelIndex] = 0;
+    }
+
+
+    //maybe put a __syncthreads here to ensure following ops are coallesced??
+    __syncthreads(); //Is this necessary?
+
+    //load data from global memory (each thread loads the data for it's pixel)
+    //as each thread accesses a consecutive memory location, access should be coalesced
+
+    //int uplc = candidate_ind[blockIdx.x] - (0.5*blockDim.x) - (0.5*blockDim.y)*n_columns; //upper left hand corner of the subROI
+    //FIXME: Check why we need this offset -> potentially has to do with convolutions using even kernel sizes
+    int uplc = candidate_ind[blockIdx.x] - (0.5*(blockDim.x - 2)) - (0.5*(blockDim.y - 2))*n_columns;
+
+    pixel_bkgnd = background[uplc + threadIdx.x + threadIdx.y*n_columns]; // [e-]
+    pixel_data = data_e[uplc + threadIdx.x + threadIdx.y*n_columns];  // [e-]
+
+    //Precompute
+    pixel_variance_over_gain_squared = variance_over_gain_squared[uplc + threadIdx.x + threadIdx.y*n_columns];
+    data = pixel_data + pixel_variance_over_gain_squared;
+
+    //wait untill all loads have taken place
+    __syncthreads();
+
+
+    //if (blockIdx.x ==0){
+    //testROI[pixelIndex] = data;
+    //__syncthreads();
+    //}
+    //initial values
+    //==============
+    //Find Center of mass
+
+    //find sum of all pixels in ROI
+    s_temp0[pixelIndex] = pixel_data;
+    kernel_sum_reduce(BlockSize, pixelIndex, s_temp0, &data_sum);
+
+    //printf("data_sum: %f", data_sum);
+
+    // Find centroid
+    s_temp0[pixelIndex] = pixel_data*threadIdx.x/data_sum;
+    s_temp1[pixelIndex] = pixel_data*threadIdx.y/data_sum;
+
+    kernel_sum_reduce_dual(BlockSize, pixelIndex, s_temp0, s_temp1, &theta[0], &theta[1]);
+
+    /*
+    if ((pixelIndex == 0) && (blockIdx.x == 0)){
+        printf("data_sum: %f ;", data_sum);
+        printf("x0, y0: %f, %f ;", theta[0], theta[1]);
+        //theta[0] = 3;
+        //printf("theta0 = %f", theta[0]);
+    }*/
+
+    //find max and min values
+    s_temp0[pixelIndex] = pixel_data;
+    s_temp1[pixelIndex] = pixel_data;
+
+    kernel_min_reduce(BlockSize, pixelIndex, s_temp0, &theta[3]);
+    kernel_max_reduce(BlockSize, pixelIndex, s_temp1, &Nmax);
+
+    if (pixelIndex == 0)
+        //We only need to do this once - do it in thread 0
+        theta[2]=fmaxf(0.0, (Nmax-theta[3])*2*pi*psf_sigma*psf_sigma);
+
+        theta[4]=psf_sigma;
+        theta[5]=psf_sigma;
+
+    __syncthreads();
+
+    for (kk=0;kk<iterations;kk++) {//main iterative loop
+
+        PSFx=kernel_IntGauss1D(threadIdx.x, theta[0], theta[4]);
+        PSFy=kernel_IntGauss1D(threadIdx.y, theta[1], theta[5]);
+
+        model=theta[3] + theta[2]*PSFx*PSFy + pixel_variance_over_gain_squared + pixel_bkgnd;
+        //data=pixel_data + pixel_variance_over_gain_squared; //now calculated outside loop
+
+        //calculating derivatives
+        kernel_DerivativeIntGauss1D(threadIdx.x, theta[0], theta[4], theta[2], PSFy, &dudt[0], &d2udt2[0]);
+        kernel_DerivativeIntGauss1D(threadIdx.y, theta[1], theta[5], theta[2], PSFx, &dudt[1], &d2udt2[1]);
+        kernel_DerivativeIntGauss1DSigma(threadIdx.x, theta[0], theta[4], theta[2], PSFy, &dudt[4], &d2udt2[4]);
+        kernel_DerivativeIntGauss1DSigma(threadIdx.y, theta[1], theta[5], theta[2], PSFx, &dudt[5], &d2udt2[5]);
+        dudt[2] = PSFx*PSFy;
+        d2udt2[2] = 0.0;
+        dudt[3] = 1.0;
+        d2udt2[3] = 0.0;
+
+        cf=0.0;
+        df=0.0;
+        if (model>10e-3) cf=data/model-1;
+        if (model>10e-3) df=data/(model*model);
+        cf=min(cf, 10e4);
+        df=min(df, 10e4);
+
+        for (ll=0;ll < NUM_VARS_ASTIG;ll++){
+            s_temp0[pixelIndex] = dudt[ll]*cf;
+            s_temp1[pixelIndex] = d2udt2[ll]*cf - pow(dudt[ll], 2)*df;
+
+            //sum over all pixels
+            kernel_sum_reduce_dual(BlockSize, pixelIndex, s_temp0, s_temp1, &NR_Numerator[ll], &NR_Denominator[ll]);
+        }
+
+
+        // The update
+        ll = pixelIndex;
+        //rather than looping over the variables, use the first NUM_VARS_ASTIG threads
+        if (ll < NUM_VARS_ASTIG){
+            if (kk<2) //FIXME check to see if this should be for the first 5 iterations instead
+            //if (kk<5) //FIXME check to see if this should be for the first 5 iterations instead
+                theta[ll]-=gamma[ll]*min(fmaxf(NR_Numerator[ll]/NR_Denominator[ll], -maxjump[ll]), maxjump[ll]);
+            else
+                theta[ll]-=min(fmaxf(NR_Numerator[ll]/NR_Denominator[ll], -maxjump[ll]), maxjump[ll]);
+
+        }
+        __syncthreads();
+
+        if (pixelIndex == 0){
+            // Do this in the 0th thread only - i.e. once per block/ROI
+            // Any other constraints
+            theta[2]=fmaxf(theta[2], 1.0);
+            theta[3]=fmaxf(theta[3], 0.01);
+            theta[4]=fmaxf(theta[4], psf_sigma/10.0);
+            theta[5]=fmaxf(theta[5], psf_sigma/10.0);
+
+            /*printf("block: %d, iteration: %d, theta: [%f, %f, %f, %f]\n", blockIdx.x, kk, theta[0], theta[1], theta[2], theta[3]);
+            printf("block: %d, iteration: %d, num/dem: [%f/%f, %f/%f, %f/%f, %f/%f]\n", blockIdx.x, kk,
+                NR_Numerator[0], NR_Denominator[0], NR_Numerator[1], NR_Denominator[1],
+                NR_Numerator[2], NR_Denominator[2], NR_Numerator[3], NR_Denominator[3]
+                );*/
+        }
+
+        __syncthreads();
+
+    }
+
+    if (calc_crb){
+        // Calculating the CRLB and LogLikelihood
+        //Div=0.0;
+
+        //evaluate model with final parameters
+        //Note that if fit is converged, we could probably skip this step
+        //as model, dudt etc ... should still have the correct values from the last fit iteration
+        PSFx=kernel_IntGauss1D(threadIdx.x, theta[0], theta[4]);
+        PSFy=kernel_IntGauss1D(threadIdx.y, theta[1], theta[5]);
+
+        model=theta[3] + theta[2]*PSFx*PSFy + pixel_variance_over_gain_squared + pixel_bkgnd;
+
+        //calculating derivatives
+        //kernel_DerivativeIntGauss1D(threadIdx.x, theta[0], psf_sigma, theta[2], PSFy, &dudt[0], NULL);
+        //kernel_DerivativeIntGauss1D(threadIdx.y, theta[1], psf_sigma, theta[2], PSFx, &dudt[1], NULL);
+        kernel_DerivativeIntGauss1D(threadIdx.x, theta[0], theta[4], theta[2], PSFy, &dudt[0], NULL);
+        kernel_DerivativeIntGauss1D(threadIdx.y, theta[1], theta[5], theta[2], PSFx, &dudt[1], NULL);
+        kernel_DerivativeIntGauss1DSigma(threadIdx.x, theta[0], theta[4], theta[2], PSFy, &dudt[4], NULL);
+        kernel_DerivativeIntGauss1DSigma(threadIdx.y, theta[1], theta[5], theta[2], PSFx, &dudt[5], NULL);
+
+        dudt[2] = PSFx*PSFy;
+        dudt[3] = 1.0;
+
+        //Building the Fisher Information Matrix
+        for (kk=0;kk<NUM_VARS_ASTIG;kk++) for (ll=kk;ll<NUM_VARS_ASTIG;ll++){
+
+            //reuse s_temp0 here to save memory
+            s_temp0[pixelIndex] = dudt[ll]*dudt[kk]/model;
+
+            //sum over all pixels
+            kernel_sum_reduce(BlockSize, pixelIndex, s_temp0, &M[kk*NUM_VARS_ASTIG+ll]);
+
+            if (pixelIndex == 0){
+                //execute in first thread of block only
+
+                //exploit known matrix symetry and copy value to the mirrored entry
+                M[ll*NUM_VARS_ASTIG+kk] = M[kk*NUM_VARS_ASTIG+ll];
+            }
+
+            __syncthreads();
+
+        }
+
+        //LogLikelyhood
+        if (model>0){
+            if (data>0){
+                //reuse s_temp0 here to save memory
+                s_temp0[pixelIndex] = data*log(model)-model-data*log(data)+data;
+            } //Div+=data*log(model)-model-data*log(data)+data;
+            else {
+                s_temp0[pixelIndex] = -model;
+            } //Div+=-model;
+        } else s_temp0[pixelIndex] =0;
+
+        //sum over all pixels
+        kernel_sum_reduce(BlockSize, pixelIndex, s_temp0, &Div);
+
+        if (pixelIndex == 0){
+            //only in first thread ...
+
+            //write our log likelihood back into global memory
+            log_likelihood[blockIdx.x] = Div;
+
+            // Matrix inverse (CRLB=F^-1) and output assigments
+            kernel_MatInvN(M, Minv, Diag, NUM_VARS_ASTIG);
+        }
+
+    }
+    __syncthreads();
+
+    //Add the offset back to the fit positions
+    //int uplc = candidate_ind[blockIdx.x] - (0.5*blockDim.x) - (0.5*blockDim.y)*n_columns; //upper left hand corner of the subROI
+    //pixel_data = d_data[uplc + threadIdx.x + threadIdx.y*n_columns];
+    //int xoffSet = uplc % n_columns;
+    //int yoffSet = uplc / n_columns;
+
+    //printf("Xuplc : %d ,", (uplc % n_columns));
+    //theta[0] += (float) (uplc % n_columns);
+    //theta[1] += (float) (uplc / n_columns);
+
+
+    if (pixelIndex == 0){
+        //if (blockIdx.x == 0) printf("x pos %f, y pos %f    ", theta[0], theta[1]);
+        //if (blockIdx.x == 0) printf("x Offset %d, y Offset %d    ", uplc % n_columns, uplc / n_columns);
+        //printf("Candidate Position: %d, x Offset %d, y Offset %d   ", candidate_ind[blockIdx.x], uplc % n_columns, uplc / n_columns);
+        theta[0] += (float) (uplc % n_columns); //Row offset (x)
+        theta[1] += (float) (uplc / n_columns); //Column offset (y)
+        //rezero the list of candidate molecules so that it no longer needs to be reallocated for each frame's fit.
+        candidate_ind[blockIdx.x] = 0;
+    }
+
+
+
+    //write to global arrays
+    //CHECK!! - are output arrays transposed???
+    //We want this matrix orientation as it optimizes memory access speed (coalescing)
+    if (pixelIndex < NUM_VARS_ASTIG){
+        fit_results[NUM_VARS_ASTIG*(blockIdx.x) + pixelIndex] = theta[pixelIndex];
+        cramer_rao_bounds[NUM_VARS_ASTIG*(blockIdx.x) + pixelIndex] = Diag[pixelIndex];
+    }
+
+
+
+
+    return;
+}

@@ -6,7 +6,7 @@ Andrew Barentine - Spring 2016
 
 #include <stdio.h>
 
-__global__ void convRowGPU_var(float *var, float *rconvdata, float *filter,// const int rowsize,
+__global__ void dog_row_variance_convolution(float *var, float *rconvdata, float *filter,// const int rowsize,
 int halfFilt, const int colsize)
 /*
 This function takes input data and performs a row convolution. The convolution is stored in a separate
@@ -110,8 +110,31 @@ Each row is loaded into shared memory before the convolution is performed.
 
 }
 
-__global__ void convRowGPU(float *data, float *var, float *rconvdata, float *gain, float *filter,// const int rowsize,
-int halfFilt, const int colsize, float *bkgnd)
+__global__ void dog_row_convolution(float *data, float *var, float *row_convolved_data, float *filter,// const int rowsize,
+int half_filter_size, float *background)
+/*
+    Perform the first part of a separable convolution. FIXME - finish this description
+
+    Parameters
+    ----------
+    data: input data, camera-corrected and converted to units of e-
+    var: (per-pixel) variance due to readout noise [e-^2]
+    rconvdata: memory allocation to store result
+
+
+    CUDA indexing
+    -------------
+    block
+        x: n_columns
+            size[1] of the variance map
+    grid
+        x: n_rows
+            size[0] of the variance map
+
+    Notes
+    -----
+    Note that the PYME.remFitBuf.fitTask.calcSigma returns variance in [ADU^2] while here we return in e-^2
+*/
 /*
 This function takes input data, subtracts the pixel-dependent background estimate, converts the data from units of ADU
 to photoelectrons and performs a row convolution. The convolution is stored in a separate output array.
@@ -119,37 +142,36 @@ Each row is loaded into shared memory before the convolution is performed. Curre
 be convolved by this function is 1024x1024, because each pixel is assigned its own thread.
 */
 {
-    int k, halfFiltm1 = halfFilt-1;
-    int rid = blockIdx.x;
-    int j = threadIdx.x;
-    float tempsum = 0;
+    int k;
+    int ind = blockIdx.x * blockDim.x + threadIdx.x;
+    float temp_sum = 0;
 
-    volatile __shared__ float rdata_sh[1075]; //should be changed to colsize (PADDED SIZE, or larger)
+    volatile __shared__ float rdata_sh[1075]; //should be changed to blockDim.x (PADDED SIZE, or larger)
     __shared__ float filter_sh[12];
 
     // Pad the shared memory array
-    if (j < (halfFilt)){
-        rdata_sh[j] = 0;
-        rdata_sh[colsize + j + halfFilt] = 0;
+    if (threadIdx.x < (half_filter_size)){
+        rdata_sh[threadIdx.x] = 0;
+        rdata_sh[blockDim.x + threadIdx.x + half_filter_size] = 0;
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
     }
     // load row of data into shared mem and subtract background
-    rdata_sh[j + halfFilt] = (data[rid*colsize + j] - bkgnd[rid*colsize + j])/(var[rid*colsize + j]*gain[rid*colsize + j]);
-    if (j < (2*halfFilt)) filter_sh[j] = filter[j];
+    rdata_sh[threadIdx.x + half_filter_size] = (data[ind] - background[ind])/var[ind];
+    if (threadIdx.x < (2 * half_filter_size)) filter_sh[threadIdx.x] = filter[threadIdx.x];
 
     // make sure we're ready to convolve
     __syncthreads();
 
     // perform convolution
-    for (k = -halfFilt; k <= halfFiltm1; k++){
-        tempsum += rdata_sh[(j + halfFilt) - k]*filter_sh[k + halfFilt];
+    for (k = -half_filter_size; k <= half_filter_size - 1; k++){
+        temp_sum += rdata_sh[(threadIdx.x + half_filter_size) - k]*filter_sh[k + half_filter_size];
     }
     // push results to output array
-    rconvdata[rid*colsize + j] = tempsum;
+    row_convolved_data[ind] = temp_sum;
 }
 
 
-__global__ void convColGPU(float *data,  float *filter, int rowsize, int colsize, int halfFilt)
+__global__ void dog_column_convolution(float *data,  float *filter, int rowsize, int colsize, int halfFilt)
 {
 /*
 This function takes input data (row convolved data) and performs a column convolution. The convolution results are
@@ -190,7 +212,7 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
     data[cid + j*colsize] = tempsum;
 }
 
-__global__ void smoothImGPU(float *uniflargedat, float *uniflargevar, float *unifsmalldat,  float *unifsmallvar,
+__global__ void weighted_difference_of_gaussian_subtraction(float *uniflargedat, float *uniflargevar, float *unifsmalldat,  float *unifsmallvar,
 int colsize, int halfFilt)
 {
 /*
