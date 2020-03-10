@@ -50,8 +50,6 @@ class detector(object):
         self.iterations = np.int32(iterations)
         self.guess_psf_sigma = np.float32(guess_psf_sigma)
 
-        self.small_filter_size = small_filter_size  # store this so we can check if maps need to be refiltered on change
-
         ###################### initialize PyCUDA ######################
         # select the first device and run in the default context
         self.dev = cuda.Device(0)
@@ -181,6 +179,8 @@ class detector(object):
         -------
 
         """
+        self.small_filter_size = small_filter_size  # store this so we can check if maps need to be refiltered on change
+
         self.unifilt_small = norm_uniform_filter(small_filter_size)
         self.unifilt_large = norm_uniform_filter(large_filter_size)
         self.halfsize_large_filter = np.int32(0.5 * len(self.unifilt_large))
