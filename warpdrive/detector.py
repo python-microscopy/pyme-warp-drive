@@ -128,7 +128,6 @@ class detector(object):
         self.n_candidates_gpu = cuda.mem_alloc(4)
         cuda.memcpy_htod(self.n_candidates_gpu, self.n_candidates)
         self.n_max_candidates_per_frame = np.int32(800)
-        self.fit_chunk_size = 32
         self.candidate_positions = np.zeros(self.n_max_candidates_per_frame, dtype=np.int32)
         self.candidate_positions_gpu = cuda.mem_alloc(self.candidate_positions.size *
                                                       self.candidate_positions.dtype.itemsize)
