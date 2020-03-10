@@ -42,18 +42,15 @@ def norm_uniform_filter(length):
 
 
 class detector(object):
-    def __init__(self, small_filter_size=4, large_filter_size=8, guess_psf_sigma=1.4):
+    def __init__(self, small_filter_size=4, large_filter_size=8, guess_psf_sigma=1.4, iterations=200):
         """
         Initialize PyCUDA and compile CUDA functions. All CUDA functions will be run in the default context
         in several streams initialized here.
         """
-        self.iterations = np.int32(200)
-
-        self.unifilt_large = norm_uniform_filter(large_filter_size)
-        self.unifilt_small = norm_uniform_filter(small_filter_size)
-        self.halfsize_large_filter = np.int32(0.5 * large_filter_size)
-        self.halfsize_small_filter = np.int32(0.5 * small_filter_size)
+        self.iterations = np.int32(iterations)
         self.guess_psf_sigma = np.float32(guess_psf_sigma)
+
+        self.small_filter_size = small_filter_size  # store this so we can check if maps need to be refiltered on change
 
         ###################### initialize PyCUDA ######################
         # select the first device and run in the default context
@@ -98,8 +95,8 @@ class detector(object):
         print('Shared Memory size: %d' % info.shared_memory)
         print('Blocks per MP: %d' % info.thread_blocks_per_mp)
         print('MP count: %d' % self.dev.multiprocessor_count)
-        #sharedinfo = self.context.get_shared_config()
-        #print sharedinfo
+
+        self.set_filter_kernels(small_filter_size, large_filter_size)
 
     def allocate_memory(self, dshape):
         """
@@ -117,18 +114,18 @@ class detector(object):
 
         ###################### Allocate resources on GPU ######################
 
-        self.data_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
+        self.data_gpu = cuda.mem_alloc(self.dsize)
         self.bkgnd_gpu = cuda.mem_alloc(self.dsize)
         # fill background with zeros on gpu in case fitting without background subtraction is called
         cuda.memcpy_htod(self.bkgnd_gpu, np.ascontiguousarray(np.zeros(self.dshape), dtype=np.float32))
-        # self.noiseSigma_gpu = cuda.mem_alloc(self.dsize)
-        self.unif1_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
-        self.unif2_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
-        self.unif1v_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
-        self.unif2v_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
-        self.invvar_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(varmap.size * varmap.dtype.itemsize)
-        self.filter1_gpu = cuda.mem_alloc(self.unifilt_large.size * self.unifilt_large.dtype.itemsize)  # cuda.mem_alloc(dfilter1.size * dfilter1.dtype.itemsize)
-        self.filter2_gpu = cuda.mem_alloc(self.unifilt_small.size * self.unifilt_small.dtype.itemsize)  # cuda.mem_alloc(dfilter2.size * dfilter2.dtype.itemsize)
+
+        self.unif1_gpu = cuda.mem_alloc(self.dsize)
+        self.unif2_gpu = cuda.mem_alloc(self.dsize)
+        self.unif1v_gpu = cuda.mem_alloc(self.dsize)
+        self.unif2v_gpu = cuda.mem_alloc(self.dsize)
+        self.invvar_gpu = cuda.mem_alloc(self.dsize)
+        # self.filter1_gpu = cuda.mem_alloc(self.unifilt_large.size * self.unifilt_large.dtype.itemsize)
+        # self.filter2_gpu = cuda.mem_alloc(self.unifilt_small.size * self.unifilt_small.dtype.itemsize)
         self.maxf_data_gpu = cuda.mem_alloc(self.dsize)
 
         self.n_candidates = np.array(0, dtype=np.int32)
@@ -171,6 +168,26 @@ class detector(object):
 
         # for troubleshooting:
         self.dtarget = np.zeros(self.dshape, dtype=np.float32)
+
+    def set_filter_kernels(self, small_filter_size, large_filter_size):
+        """
+        fixme - add note about running prepare_maps after
+        Parameters
+        ----------
+        small_filter_size
+        large_filter_size
+
+        Returns
+        -------
+
+        """
+        self.unifilt_small = norm_uniform_filter(small_filter_size)
+        self.unifilt_large = norm_uniform_filter(large_filter_size)
+        self.halfsize_large_filter = np.int32(0.5 * len(self.unifilt_large))
+        self.halfsize_small_filter = np.int32(0.5 * len(self.unifilt_small))
+        # re-allocate filters on gpu, which get sent to gpu during map filtering
+        self.filter1_gpu = cuda.mem_alloc(self.unifilt_large.size * self.unifilt_large.dtype.itemsize)
+        self.filter2_gpu = cuda.mem_alloc(self.unifilt_small.size * self.unifilt_small.dtype.itemsize)
 
     def prepare_maps(self, darkmap, varmap, flatmap, electrons_per_count, noise_factor, em_gain):
         """
