@@ -47,7 +47,7 @@ def runTest(plotIt=False, subBkgnd=False, compare=False):
             rawdat = np.ascontiguousarray(rawdat)
             _warpdrive.smoothFrame(rawdat, dummyBkgnd)
             _warpdrive.getCand(3.7, 16)  # adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
-            _warpdrive.fitItToWinIt()  # : need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
+            _warpdrive.fitItToWinIt()  # : need getCand run each loop in order to test fitItSlow because candidate_positions is zerod after fit each run
             t1 = time.time()
             telapsed.append(t1-t0)
     else:
@@ -57,7 +57,7 @@ def runTest(plotIt=False, subBkgnd=False, compare=False):
             _warpdrive.smoothFrame(rawdat)
             _warpdrive.getCand(3.7, 16)
             #_warpdrive.getCand(3.7, 16) #adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
-            #_warpdrive.fitItSlow(18) #NOTE: need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
+            #_warpdrive.fitItSlow(18) #NOTE: need getCand run each loop in order to test fitItSlow because candidate_positions is zerod after fit each run
             _warpdrive.fitItToWinIt()
             t1 = time.time()
             telapsed.append(t1-t0)
@@ -67,15 +67,15 @@ def runTest(plotIt=False, subBkgnd=False, compare=False):
         rawdat = np.ascontiguousarray(rawdat)
         _warpdrive.smoothFrame(rawdat, dummyBkgnd)
         _warpdrive.getCand(3.7, 16)  # adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
-        _warpdrive.fitItToWinIt()  # : need getCand run each loop in order to test fitItSlow because candPos is zerod after fit each run
-        dparsBk = np.copy(_warpdrive.dpars)
+        _warpdrive.fitItToWinIt()  # : need getCand run each loop in order to test fitItSlow because candidate_positions is zerod after fit each run
+        dparsBk = np.copy(_warpdrive.fit_res)
         crlbBk = np.copy(_warpdrive.CRLB)
         llhBk = np.copy(_warpdrive.LLH)
 
         _warpdrive.smoothFrame(rawdat)
         _warpdrive.getCand(3.7, 16)  # adjusted threshold in order to run the same nubmer of fits as Matlab. roi16 sets maxfilt size = 15
         _warpdrive.fitItToWinIt()
-        dpars = np.copy(_warpdrive.dpars)
+        dpars = np.copy(_warpdrive.fit_res)
         crlb = np.copy(_warpdrive.CRLB)
         llh = np.copy(_warpdrive.LLH)
 
@@ -112,13 +112,13 @@ def runTest(plotIt=False, subBkgnd=False, compare=False):
 
     #print('Mean runtime of %.7f, +- %.7f' % (np.mean(telapsed), np.std(telapsed)))
 
-    print(_warpdrive.dpars.shape)
+    print(_warpdrive.fit_res.shape)
     if plotIt:
         import matplotlib.pyplot as plt
         plt.figure()
         plt.imshow(rawdat)
-        plt.scatter(np.reshape(_warpdrive.dpars, (_warpdrive.maxCandCount, 6))[:_warpdrive.candCount, 0],
-                    np.reshape(_warpdrive.dpars, (_warpdrive.maxCandCount, 6))[:_warpdrive.candCount, 1])
+        plt.scatter(np.reshape(_warpdrive.fit_res, (_warpdrive.n_max_candidates_per_frame, 6))[:_warpdrive.n_candidates, 0],
+                    np.reshape(_warpdrive.fit_res, (_warpdrive.n_max_candidates_per_frame, 6))[:_warpdrive.n_candidates, 1])
         plt.show()
 
 if __name__ == "__main__":

@@ -49,22 +49,22 @@ class detector(object):
         """
         self.iterations = np.int32(200)
 
-        self.dfilterBig = norm_uniform_filter(large_filter_size)
-        self.dfilterSmall = norm_uniform_filter(small_filter_size)
-        self.halfFiltBig = np.int32(0.5*large_filter_size)
-        self.halfFiltSmall = np.int32(0.5*small_filter_size)
+        self.unifilt_large = norm_uniform_filter(large_filter_size)
+        self.unifilt_small = norm_uniform_filter(small_filter_size)
+        self.halfsize_large_filter = np.int32(0.5 * large_filter_size)
+        self.halfsize_small_filter = np.int32(0.5 * small_filter_size)
         self.guess_psf_sigma = np.float32(guess_psf_sigma)
 
         ###################### initialize PyCUDA ######################
         # select the first device and run in the default context
         self.dev = cuda.Device(0)
 
-        self.dstreamer1 = cuda.Stream()
-        self.dstreamer2 = cuda.Stream()
-        self.vstreamer1 = cuda.Stream()
-        self.vstreamer2 = cuda.Stream()
+        self.main_stream_r = cuda.Stream()
+        self.main_stream_c = cuda.Stream()
+        self.var_stream_r = cuda.Stream()
+        self.var_stream_c = cuda.Stream()
 
-        self.streams = [self.dstreamer1, self.dstreamer2, self.vstreamer1, self.vstreamer2]
+        self.streams = [self.main_stream_r, self.main_stream_c, self.var_stream_r, self.var_stream_c]
         self.num_streams = len(self.streams)
 
         ###################### Compile CUDA code ######################
@@ -72,22 +72,22 @@ class detector(object):
         self.prep_variance_over_gain_squared = self._prepare_mod.get_function('variance_over_gain_squared')
         self.raw_adu_to_e_and_estimate_noise = self._prepare_mod.get_function('raw_adu_to_e_and_estimate_noise')
         # compile difference-of-gaussian filters
-        self.dog_mod = detectorCompileNBlock_sCMOS()
+        self.dog_mod = compile_filters()
         self.dog_row_variance = self.dog_mod.get_function("dog_row_variance_convolution")
         self.dog_row = self.dog_mod.get_function("dog_row_convolution")
         self.dog_column = self.dog_mod.get_function("dog_column_convolution")
         self.weighted_dog = self.dog_mod.get_function("weighted_difference_of_gaussian_subtraction")
 
         # compile finding code
-        self.findmod = finderCompile()
+        self.findmod = compile_find_peaks()
         self.maxfrow = self.findmod.get_function("maxfRowGPU")
         self.maxfcol = self.findmod.get_function("maxfColGPU")
-        self.findPeaks = self.findmod.get_function("findPeaks")
+        self.find_peaks = self.findmod.get_function("findPeaks")
         self.find_candidates_noise_thresh = self.findmod.get_function('find_candidates_noise_thresh')
 
 
         # compile fit
-        self.fitmod = gaussMLE_Fang_David()
+        self.fitmod = compile_gauss_mle()
         # self.gaussAstig = self.fitmod.get_function("kernel_MLEFit_pix_threads_astig")
         self.pix_threads_astig_bkgndsub_mle = self.fitmod.get_function('pix_threads_astig_bkgndsub_mle')
 
@@ -127,19 +127,19 @@ class detector(object):
         self.unif1v_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.unif2v_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(rawdat.size * rawdat.dtype.itemsize)
         self.invvar_gpu = cuda.mem_alloc(self.dsize)  # cuda.mem_alloc(varmap.size * varmap.dtype.itemsize)
-        self.filter1_gpu = cuda.mem_alloc(self.dfilterBig.size*self.dfilterBig.dtype.itemsize)  # cuda.mem_alloc(dfilter1.size * dfilter1.dtype.itemsize)
-        self.filter2_gpu = cuda.mem_alloc(self.dfilterSmall.size*self.dfilterSmall.dtype.itemsize)  # cuda.mem_alloc(dfilter2.size * dfilter2.dtype.itemsize)
-        self.maxfData_gpu = cuda.mem_alloc(self.dsize)
+        self.filter1_gpu = cuda.mem_alloc(self.unifilt_large.size * self.unifilt_large.dtype.itemsize)  # cuda.mem_alloc(dfilter1.size * dfilter1.dtype.itemsize)
+        self.filter2_gpu = cuda.mem_alloc(self.unifilt_small.size * self.unifilt_small.dtype.itemsize)  # cuda.mem_alloc(dfilter2.size * dfilter2.dtype.itemsize)
+        self.maxf_data_gpu = cuda.mem_alloc(self.dsize)
 
-        self.candCount = np.array(0, dtype=np.int32)
-        self.candCountZ = np.array(0, dtype=np.int32)
-        self.candCount_gpu = cuda.mem_alloc(4)
-        cuda.memcpy_htod(self.candCount_gpu, self.candCount)
-        self.maxCandCount = np.int32(800)
-        self.fitChunkSize = 32
-        self.candPos = np.zeros(self.maxCandCount, dtype=np.int32) # This size of this array sets the limit on the number of candidate molecules per frame
-        self.candPos_gpu = cuda.mem_alloc(self.candPos.size*self.candPos.dtype.itemsize)
-        cuda.memcpy_htod(self.candPos_gpu, self.candPos)
+        self.n_candidates = np.array(0, dtype=np.int32)
+        self.n_candidate_zeroer = np.array(0, dtype=np.int32)
+        self.n_candidates_gpu = cuda.mem_alloc(4)
+        cuda.memcpy_htod(self.n_candidates_gpu, self.n_candidates)
+        self.n_max_candidates_per_frame = np.int32(800)
+        self.fit_chunk_size = 32
+        self.candidate_positions = np.zeros(self.n_max_candidates_per_frame, dtype=np.int32) # This size of this array sets the limit on the number of candidate molecules per frame
+        self.candidate_positions_gpu = cuda.mem_alloc(self.candidate_positions.size * self.candidate_positions.dtype.itemsize)
+        cuda.memcpy_htod(self.candidate_positions_gpu, self.candidate_positions)
 
         self.darkmap_gpu = cuda.mem_alloc(self.dsize)
         self.flatmap_gpu = cuda.mem_alloc(self.dsize)
@@ -152,22 +152,22 @@ class detector(object):
         self.calculate_crb = np.int32(1)
 
 
-        self.dparsZ = np.zeros(6*self.fitChunkSize, dtype=np.float32)
-        self.dpars = np.zeros(6*self.maxCandCount, dtype=np.float32)
-        self.dpars_gpu = cuda.mem_alloc(self.dparsZ.size*self.dparsZ.dtype.itemsize)
+        self.fit_res_zeroer = np.zeros(6 * self.fit_chunk_size, dtype=np.float32)
+        self.fit_res = np.zeros(6 * self.n_max_candidates_per_frame, dtype=np.float32)
+        self.fit_res_gpu = cuda.mem_alloc(self.fit_res_zeroer.size * self.fit_res_zeroer.dtype.itemsize)
 
 
-        #self.CRLBs = np.zeros((6, self.candCount), dtype=np.float32)
-        self.CRLBZ = np.zeros(6*self.fitChunkSize, dtype=np.float32)
-        self.CRLB = np.zeros(6*self.maxCandCount, dtype=np.float32)
-        self.CRLB_gpu = cuda.mem_alloc(self.CRLBZ.size*self.CRLBZ.dtype.itemsize)
+        #self.CRLBs = np.zeros((6, self.n_candidates), dtype=np.float32)
+        self.CRLB_zeroer = np.zeros(6 * self.fit_chunk_size, dtype=np.float32)
+        self.CRLB = np.zeros(6 * self.n_max_candidates_per_frame, dtype=np.float32)
+        self.CRLB_gpu = cuda.mem_alloc(self.CRLB_zeroer.size * self.CRLB_zeroer.dtype.itemsize)
 
-        self.LLHZ = np.zeros(self.fitChunkSize, dtype=np.float32)
-        self.LLH = np.zeros(self.maxCandCount, dtype=np.float32)
-        self.LLH_gpu = cuda.mem_alloc(self.LLHZ.size*self.LLHZ.dtype.itemsize)
+        self.LLH_zeroer = np.zeros(self.fit_chunk_size, dtype=np.float32)
+        self.LLH = np.zeros(self.n_max_candidates_per_frame, dtype=np.float32)
+        self.LLH_gpu = cuda.mem_alloc(self.LLH_zeroer.size * self.LLH_zeroer.dtype.itemsize)
 
-        self.dummyPosChunk = np.zeros(self.fitChunkSize, dtype=np.int32)
-        self.candPosChunk_gpu = cuda.mem_alloc(self.dummyPosChunk.size*self.dummyPosChunk.dtype.itemsize)
+        dummy_position_chunk = np.zeros(self.fit_chunk_size, dtype=np.int32)
+        self.candidate_position_chunk_gpu = cuda.mem_alloc(dummy_position_chunk.size * dummy_position_chunk.dtype.itemsize)
 
         # for troubleshooting:
         self.dtarget = np.zeros(self.dshape, dtype=np.float32)
@@ -205,56 +205,56 @@ class detector(object):
 
         # send maps to the gpu
         cuda.memcpy_htod_async(self.flatmap_gpu, np.ascontiguousarray(flatmap, dtype=np.float32),
-                               stream=self.vstreamer1)
+                               stream=self.var_stream_r)
         cuda.memcpy_htod_async(self.varmap_gpu, np.ascontiguousarray(self.varmap, dtype=np.float32),
-                               stream=self.vstreamer1)
+                               stream=self.var_stream_r)
         cuda.memcpy_htod_async(self.darkmap_gpu, np.ascontiguousarray(darkmap, dtype=np.float32),
-                               stream=self.vstreamer1)
+                               stream=self.var_stream_r)
 
         # precalculate a per-pixel constant we'll use in the fit later. OK to leave this unsynced until later
         self.prep_variance_over_gain_squared(self.varmap_gpu, self.flatmap_gpu, np.float32(electrons_per_count),
                                              self.variance_over_gain_squared_gpu, block=(self.nrows, 1, 1),
-                                             grid=(self.ncolumns, 1), stream=self.vstreamer2)
+                                             grid=(self.ncolumns, 1), stream=self.var_stream_c)
 
         # send our filters to device
-        cuda.memcpy_htod_async(self.filter1_gpu, self.dfilterBig, stream=self.vstreamer1)
-        cuda.memcpy_htod_async(self.filter2_gpu, self.dfilterSmall, stream=self.vstreamer1)
+        cuda.memcpy_htod_async(self.filter1_gpu, self.unifilt_large, stream=self.var_stream_r)
+        cuda.memcpy_htod_async(self.filter2_gpu, self.unifilt_small, stream=self.var_stream_r)
 
         # make sure all maps are on the gpu before splitting into multiple streams
-        self.vstreamer1.synchronize()
+        self.var_stream_r.synchronize()
 
         # Take row convolutions
         self.dog_row_variance(self.varmap_gpu, self.unif1v_gpu, self.filter1_gpu,
-                     self.halfFiltBig, self.n_columns, block=(self.ncolumns, 1, 1),
-                     grid=(self.nrows, 1), stream=self.vstreamer1)
+                              self.halfsize_large_filter, self.n_columns, block=(self.ncolumns, 1, 1),
+                              grid=(self.nrows, 1), stream=self.var_stream_r)
 
         self.dog_row_variance(self.varmap_gpu, self.unif2v_gpu, self.filter2_gpu,
-                     self.halfFiltSmall, self.n_columns, block=(self.ncolumns, 1, 1),
-                     grid=(self.nrows, 1), stream=self.vstreamer2)
+                              self.halfsize_small_filter, self.n_columns, block=(self.ncolumns, 1, 1),
+                              grid=(self.nrows, 1), stream=self.var_stream_c)
 
         # Take column convolutions
-        self.dog_column(self.unif1v_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
-                   block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.vstreamer1)
-        self.dog_column(self.unif2v_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
-                   block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.vstreamer2)
+        self.dog_column(self.unif1v_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfsize_large_filter,
+                        block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.var_stream_r)
+        self.dog_column(self.unif2v_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfsize_small_filter,
+                        block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.var_stream_c)
 
         # make sure we're done before returning
-        self.vstreamer1.synchronize()
-        self.vstreamer2.synchronize()
+        self.var_stream_r.synchronize()
+        self.var_stream_c.synchronize()
 
         #cuda.memcpy_dtoh(self.dtarget, self.unif1v_gpu)
         #plt.show(plt.imshow(self.dtarget, interpolation='nearest'))
 
     def prepare_frame(self, data):
         self.data = np.ascontiguousarray(data, dtype=np.float32)
-        cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
+        cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.main_stream_r)
 
         self.raw_adu_to_e_and_estimate_noise(self.data_gpu, self.varmap_gpu, self.darkmap_gpu, self.flatmap_gpu,
                                              self._noise_factor, self._electrons_per_count, self._em_gain,
                                              self.noise_sigma_gpu,
-                                             block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.dstreamer1)
+                                             block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.main_stream_r)
 
-        # dstreamer1 is synchronized in difference_of_gaussian_filter, so no need to repeat that here.
+        # main_stream_r is synchronized in difference_of_gaussian_filter, so no need to repeat that here.
 
 
     def difference_of_gaussian_filter(self, background=None):
@@ -275,11 +275,11 @@ class detector(object):
         #print('Background: %s' % (bkgnd is None))
         # make sure that the data is contiguous, and send to GPU
         # self.data = np.ascontiguousarray(data, dtype=np.float32)
-        # cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.dstreamer1)
+        # cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.main_stream_r)
         if background is None:
             # make sure background is zero'd on gpu
             cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(np.zeros(self.dshape), dtype=np.float32),
-                                   stream=self.dstreamer1)
+                                   stream=self.main_stream_r)
         else:  # background is either already on the GPU or was passed to this function
             try:
                 # if we have the gpu buffer, pass off the pointer to the device memory
@@ -290,44 +290,44 @@ class detector(object):
                 # background should be array, pass it to the GPU now. FIXME - make sure background is in [e-] here
                 # send bkgnd via stream 1 because in current implementation, bkgnd is needed in row convolution
                 cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(background, dtype=np.float32),
-                                       stream=self.dstreamer1)
+                                       stream=self.main_stream_r)
 
                 # assign our fit function
             # self.fitFunc = self.pix_threads_astig_bkgndsub_mle
 
         # make sure self.prepare_frame() is finished, and if applicable, CPU background is on the GPU
-        self.dstreamer1.synchronize()
+        self.main_stream_r.synchronize()
         ############################# row convolutions ###################################
         self.dog_row(self.data_gpu, self.varmap_gpu, self.unif1_gpu, self.filter1_gpu,
-                   self.halfFiltBig, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
-                   grid=(self.nrows, 1), stream=self.dstreamer1)
+                     self.halfsize_large_filter, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
+                     grid=(self.nrows, 1), stream=self.main_stream_r)
 
         self.dog_row(self.data_gpu, self.varmap_gpu, self.unif2_gpu, self.filter2_gpu,
-                   self.halfFiltSmall, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
-                   grid=(self.nrows, 1), stream=self.dstreamer2)
+                     self.halfsize_small_filter, self.bkgnd_gpu, block=(self.ncolumns, 1, 1),
+                     grid=(self.nrows, 1), stream=self.main_stream_c)
 
         ############################# column convolutions ###################################
-        self.dog_column(self.unif1_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfFiltBig,
-                   block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.dstreamer1)
-        self.dog_column(self.unif2_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfFiltSmall,
-                   block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.dstreamer2)
+        self.dog_column(self.unif1_gpu, self.filter1_gpu, self.n_rows, self.n_columns, self.halfsize_large_filter,
+                        block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.main_stream_r)
+        self.dog_column(self.unif2_gpu, self.filter2_gpu, self.n_rows, self.n_columns, self.halfsize_small_filter,
+                        block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.main_stream_c)
 
-        # dstreamer1 does not need to be synced because next call is in that stream.
-        self.dstreamer2.synchronize()
+        # main_stream_r does not need to be synced because next call is in that stream.
+        self.main_stream_c.synchronize()
 
         ############################# generate and subtract smooth iamges ###################################
         # (float *unifsmalldat,  float *unifsmallvar, float *uniflargedat, float *uniflargevar,int colsize, int halfFilt)
         self.weighted_dog(self.unif1_gpu, self.unif1v_gpu, self.unif2_gpu, self.unif2v_gpu, self.n_columns,
-                      self.halfFiltBig, block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.dstreamer1)
+                          self.halfsize_large_filter, block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.main_stream_r)
 
-        # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in dstreamer1
+        # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in main_stream_r
 
 
     def get_candidates(self, thresh=4, ROISize=16):
         """
         getCand should only be called after smoothFrame. It performs a maximum filter on the smoothed image, then finds
         all points (farther than half-ROIsize away from the frame-border) at which the maximum filter is equal to the
-        smoothed image. The positions are then added to self.candPos, as measured in pixels taking the frame as a
+        smoothed image. The positions are then added to self.candidate_positions, as measured in pixels taking the frame as a
         1D-array
         """
         # maxFilter size will be 2*halfMaxFilt + 1
@@ -335,32 +335,32 @@ class detector(object):
 
         # fixme - make sure units on findpeaks.cu are all set once filter.cu is consistent
         # take maximum filter
-        self.maxfrow(self.unif1_gpu, self.maxfData_gpu, self.n_columns, self.halfMaxFilt, block=(self.ncolumns, 1, 1),
-                     grid=(self.nrows, 1), stream=self.dstreamer1)
+        self.maxfrow(self.unif1_gpu, self.maxf_data_gpu, self.n_columns, self.halfMaxFilt, block=(self.ncolumns, 1, 1),
+                     grid=(self.nrows, 1), stream=self.main_stream_r)
 
-        self.maxfcol(self.maxfData_gpu, self.n_columns, self.halfMaxFilt, block=(self.nrows, 1, 1),
-                     grid=(self.ncolumns, 1), stream=self.dstreamer1)
+        self.maxfcol(self.maxf_data_gpu, self.n_columns, self.halfMaxFilt, block=(self.nrows, 1, 1),
+                     grid=(self.ncolumns, 1), stream=self.main_stream_r)
 
-        # candPos should be rezero'd at the end of fitting
+        # candidate_positions should be rezero'd at the end of fitting
         # FIXME: Check to see if removing the next line broke anything
-        cuda.memcpy_htod_async(self.candCount_gpu, self.candCountZ, stream=self.dstreamer1)  #rezero the candidate count
+        cuda.memcpy_htod_async(self.n_candidates_gpu, self.n_candidate_zeroer, stream=self.main_stream_r)  #rezero the candidate count
 
         # determine whether to use simple threshold or pixel-dependent signal to noise threshold:
         # if noiseSig is None:
-        #     findFunc = self.findPeaks
+        #     findFunc = self.find_peaks
         # else:
             # cuda.memcpy_htod_async(self.noise_sigma_gpu, np.ascontiguousarray(noiseSig.squeeze(), dtype=np.float32),
-            #                        stream=self.dstreamer1)
+            #                        stream=self.main_stream_r)
             # findFunc = self.findPeaksSNThresh
 
 
-        self.find_candidates_noise_thresh(self.unif1_gpu, self.maxfData_gpu, np.float32(thresh), self.candCount_gpu,
-                                          self.candPos_gpu, self.maxCandCount, np.int32(0.5*ROISize),
+        self.find_candidates_noise_thresh(self.unif1_gpu, self.maxf_data_gpu, np.float32(thresh), self.n_candidates_gpu,
+                                          self.candidate_positions_gpu, self.n_max_candidates_per_frame, np.int32(0.5 * ROISize),
                                           self.noise_sigma_gpu,
-                                          block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.dstreamer1)
+                                          block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.main_stream_r)
 
         # retrieve number of candidates for block/grid allocation in fitting
-        cuda.memcpy_dtoh_async(self.candCount, self.candCount_gpu, stream=self.dstreamer1)
+        cuda.memcpy_dtoh_async(self.n_candidates, self.n_candidates_gpu, stream=self.main_stream_r)
 
 
     def fit_candidates(self, ROISize=16):
@@ -382,31 +382,31 @@ class detector(object):
 
         # Pull candidates back to host so we can insert them chunk by chunk into the fit
         # fixme - surely we can eliminate this back-and-forth transfer
-        cuda.memcpy_dtoh_async(self.candPos, self.candPos_gpu, stream=self.dstreamer1)
-        self.dstreamer1.synchronize()
+        cuda.memcpy_dtoh_async(self.candidate_positions, self.candidate_positions_gpu, stream=self.main_stream_r)
+        self.main_stream_r.synchronize()
         # fixme - make this work with unit-simplified and var/gain^2 pre-calc mle
         stream_counter = 0
         indy = 0
-        while indy < self.candCount:
+        while indy < self.n_candidates:
             # select stream
             to_use = self.streams[stream_counter % self.num_streams]
             # Re-zero fit outputs
-            cuda.memcpy_htod_async(self.dpars_gpu, self.dparsZ, stream=to_use)
-            cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLBZ, stream=to_use)
-            cuda.memcpy_htod_async(self.LLH_gpu, self.LLHZ, stream=to_use)
+            cuda.memcpy_htod_async(self.fit_res_gpu, self.fit_res_zeroer, stream=to_use)
+            cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLB_zeroer, stream=to_use)
+            cuda.memcpy_htod_async(self.LLH_gpu, self.LLH_zeroer, stream=to_use)
 
-            numBlock = int(np.min([self.fitChunkSize, self.candCount - indy]))
+            numBlock = int(np.min([self.fit_chunk_size, self.n_candidates - indy]))
 
-            cuda.memcpy_htod_async(self.candPosChunk_gpu, self.candPos[indy:(indy+numBlock)], stream=to_use)
+            cuda.memcpy_htod_async(self.candidate_position_chunk_gpu, self.candidate_positions[indy:(indy + numBlock)], stream=to_use)
 
             # note that which fitFunc we use has already been decided by whether background was subtracted in detection
-            self.pix_threads_astig_bkgndsub_mle(self.data_gpu, self.guess_psf_sigma, self.iterations, self.dpars_gpu, self.CRLB_gpu,
-                         self.LLH_gpu, self.variance_over_gain_squared_gpu, self.calculate_crb, self.candPosChunk_gpu,
-                         self.n_columns, self.bkgnd_gpu,  # self.testROI_gpu,
-                         block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
+            self.pix_threads_astig_bkgndsub_mle(self.data_gpu, self.guess_psf_sigma, self.iterations, self.fit_res_gpu, self.CRLB_gpu,
+                                                self.LLH_gpu, self.variance_over_gain_squared_gpu, self.calculate_crb, self.candidate_position_chunk_gpu,
+                                                self.n_columns, self.bkgnd_gpu,  # self.testROI_gpu,
+                                                block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
 
 
-            cuda.memcpy_dtoh_async(self.dpars[6*indy:6*(indy + numBlock)], self.dpars_gpu, stream=to_use)
+            cuda.memcpy_dtoh_async(self.fit_res[6 * indy:6 * (indy + numBlock)], self.fit_res_gpu, stream=to_use)
             cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=to_use)
             cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=to_use)
             indy += numBlock
@@ -420,7 +420,7 @@ class detector(object):
         #plt.show()
 
         # synchronize streams, recall a fast version of ceil(a/b) = (a - 1)/b + 1
-        for stream_index in range(min([int((self.candCount - 1) / self.fitChunkSize) + 1, self.num_streams])):
+        for stream_index in range(min([int((self.n_candidates - 1) / self.fit_chunk_size) + 1, self.num_streams])):
             self.streams[stream_index].synchronize()
 
         return
@@ -441,9 +441,9 @@ class detector(object):
         """
         cands = np.asarray(testCand)
         n_cands = len(cands)
-        self.candPos[:n_cands] = cands
-        cuda.memcpy_htod(self.candPos_gpu, self.candPos)
-        self.candCount = np.int32(n_cands)
+        self.candidate_positions[:n_cands] = cands
+        cuda.memcpy_htod(self.candidate_positions_gpu, self.candidate_positions)
+        self.n_candidates = np.int32(n_cands)
 
     def insertData(self, data, background=None):
         self.data = np.ascontiguousarray(data, dtype=np.float32)
