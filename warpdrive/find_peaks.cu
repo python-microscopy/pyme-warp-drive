@@ -139,6 +139,13 @@ int *candidate_indices, const int max_cand_count, const int half_roi_size, float
 {
     int dloc = blockIdx.x * blockDim.x + threadIdx.x;
     int temp_ind;
+
+    // rather than pycuda memcpy a zero before calling this kernel, zero it here each time
+    if (dloc == 0){
+        *counter = 0;
+    }
+    __syncthreads();  // make sure it's zero before any threads start using it
+
     // multiply threshold factor by the noise standard deviation
     float threshold = thresh_factor * noise_sigma[dloc];
 
@@ -146,16 +153,16 @@ int *candidate_indices, const int max_cand_count, const int half_roi_size, float
     if ((dog_data[dloc] == maxf_data[dloc]) && (dog_data[dloc] > threshold)){
         if ((blockIdx.x > (half_roi_size + 2)) && ((gridDim.x - blockIdx.x) > (half_roi_size + 2))
            && (threadIdx.x > (half_roi_size + 2)) && ((gridDim.x - threadIdx.x) > (half_roi_size + 2))){
-            maxf_data[dloc] = 1;
+            //maxf_data[dloc] = 1;
             temp_ind = atomicAdd(counter, 1);
             if (*counter <= max_cand_count){
                 candidate_indices[temp_ind] = dloc;
             }
         }
     }
-    else {
-        maxf_data[dloc] = 0;
-    }
+    //else {
+    //    maxf_data[dloc] = 0;
+    //}
 }
 
 /*
