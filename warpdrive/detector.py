@@ -122,12 +122,9 @@ class detector(object):
         self.unif1v_gpu = cuda.mem_alloc(self.dsize)
         self.unif2v_gpu = cuda.mem_alloc(self.dsize)
         self.invvar_gpu = cuda.mem_alloc(self.dsize)
-        # self.filter1_gpu = cuda.mem_alloc(self.unifilt_large.size * self.unifilt_large.dtype.itemsize)
-        # self.filter2_gpu = cuda.mem_alloc(self.unifilt_small.size * self.unifilt_small.dtype.itemsize)
         self.maxf_data_gpu = cuda.mem_alloc(self.dsize)
 
         self.n_candidates = np.array(0, dtype=np.int32)
-        self.n_candidate_zeroer = np.array(0, dtype=np.int32)
         self.n_candidates_gpu = cuda.mem_alloc(4)
         cuda.memcpy_htod(self.n_candidates_gpu, self.n_candidates)
         self.n_max_candidates_per_frame = np.int32(800)
@@ -147,22 +144,14 @@ class detector(object):
         self.calculate_crb = np.int32(1)
 
 
-        self.fit_res_zeroer = np.zeros(6 * self.fit_chunk_size, dtype=np.float32)
         self.fit_res = np.zeros(6 * self.n_max_candidates_per_frame, dtype=np.float32)
-        self.fit_res_gpu = cuda.mem_alloc(self.fit_res_zeroer.size * self.fit_res_zeroer.dtype.itemsize)
+        self.fit_res_gpu = cuda.mem_alloc(self.fit_res.size * self.fit_res.dtype.itemsize)
 
-
-        #self.CRLBs = np.zeros((6, self.n_candidates), dtype=np.float32)
-        self.CRLB_zeroer = np.zeros(6 * self.fit_chunk_size, dtype=np.float32)
         self.CRLB = np.zeros(6 * self.n_max_candidates_per_frame, dtype=np.float32)
-        self.CRLB_gpu = cuda.mem_alloc(self.CRLB_zeroer.size * self.CRLB_zeroer.dtype.itemsize)
+        self.CRLB_gpu = cuda.mem_alloc(self.CRLB.size * self.CRLB.dtype.itemsize)
 
-        self.LLH_zeroer = np.zeros(self.fit_chunk_size, dtype=np.float32)
         self.LLH = np.zeros(self.n_max_candidates_per_frame, dtype=np.float32)
-        self.LLH_gpu = cuda.mem_alloc(self.LLH_zeroer.size * self.LLH_zeroer.dtype.itemsize)
-
-        dummy_position_chunk = np.zeros(self.fit_chunk_size, dtype=np.int32)
-        self.candidate_position_chunk_gpu = cuda.mem_alloc(dummy_position_chunk.size * dummy_position_chunk.dtype.itemsize)
+        self.LLH_gpu = cuda.mem_alloc(self.LLH.size * self.LLH.dtype.itemsize)
 
         # for troubleshooting:
         self.dtarget = np.zeros(self.dshape, dtype=np.float32)
@@ -353,19 +342,6 @@ class detector(object):
         self.maxfcol(self.maxf_data_gpu, self.n_columns, self.halfMaxFilt, block=(self.nrows, 1, 1),
                      grid=(self.ncolumns, 1), stream=self.main_stream_r)
 
-        # candidate_positions should be rezero'd at the end of fitting
-        # FIXME: Check to see if removing the next line broke anything
-        cuda.memcpy_htod_async(self.n_candidates_gpu, self.n_candidate_zeroer, stream=self.main_stream_r)  #rezero the candidate count
-
-        # determine whether to use simple threshold or pixel-dependent signal to noise threshold:
-        # if noiseSig is None:
-        #     findFunc = self.find_peaks
-        # else:
-            # cuda.memcpy_htod_async(self.noise_sigma_gpu, np.ascontiguousarray(noiseSig.squeeze(), dtype=np.float32),
-            #                        stream=self.main_stream_r)
-            # findFunc = self.findPeaksSNThresh
-
-
         self.find_candidates_noise_thresh(self.unif1_gpu, self.maxf_data_gpu, np.float32(thresh), self.n_candidates_gpu,
                                           self.candidate_positions_gpu, self.n_max_candidates_per_frame, np.int32(0.5 * ROISize),
                                           self.noise_sigma_gpu,
@@ -377,65 +353,35 @@ class detector(object):
 
     def fit_candidates(self, ROISize=16):
         """
-        This function runs David Baddeley's pixel-wise GPU fit, and is pretty darn fast. The fit is an MLE fit, with a
-        noise-model which accounts for sCMOS statistics, i.e. a gaussian random variable (read-noise) added to a Poisson
-        -random variable. This model is described in 10.1038/nmeth.2488.
+        MLE is described in 10.1038/nmeth.2488, though this version is parallel at the level of one thread per pixel
+        rather than one thread per ROI, which has shared memory implications and results in a large performance increase
 
-        To allow multiple processes to share the GPU, each proccess only fits 32 ROI's at a time (corresponding to 32
-        candidate molecules)
+        Parameters
+        ----------
+        ROISize: int
+            square ROI size about the candidate molecule position to fit
 
-        Args:
-            ROISize: Integer size of (square) subROI to be fit
-
-        Returns:
-            nothing, but fit parameters are held (on both CPU and GPU) by detector instance
-
+        Notes
+        -----
+        fit_res, CRLB, and LLH are not zero'd on each iteration, getting the correct results requires only looking at
+        the first `n_candidates` elements of each (along the 0th dimension).
         """
+        n_candidates = int(self.n_candidates)  # grid allocation requires int not np.int32
 
-        # Pull candidates back to host so we can insert them chunk by chunk into the fit
-        # fixme - surely we can eliminate this back-and-forth transfer
-        cuda.memcpy_dtoh_async(self.candidate_positions, self.candidate_positions_gpu, stream=self.main_stream_r)
+        self.pix_threads_astig_bkgndsub_mle(self.data_gpu, self.guess_psf_sigma, self.iterations, self.fit_res_gpu,
+                                            self.CRLB_gpu, self.LLH_gpu, self.variance_over_gain_squared_gpu,
+                                            self.calculate_crb, self.candidate_positions_gpu,
+                                            self.n_columns, self.bkgnd_gpu,  # self.testROI_gpu,
+                                            block=(ROISize, ROISize, 1), grid=(n_candidates, 1),
+                                            stream=self.main_stream_r)
+
+        cuda.memcpy_dtoh_async(self.fit_res, self.fit_res_gpu, stream=self.main_stream_r)
+        cuda.memcpy_dtoh_async(self.CRLB, self.CRLB_gpu, stream=self.main_stream_r)
+        cuda.memcpy_dtoh_async(self.LLH, self.LLH_gpu, stream=self.main_stream_r)
+
+        # synchronize stream
         self.main_stream_r.synchronize()
-        # fixme - make this work with unit-simplified and var/gain^2 pre-calc mle
-        stream_counter = 0
-        indy = 0
-        while indy < self.n_candidates:
-            # select stream
-            to_use = self.streams[stream_counter % self.num_streams]
-            # Re-zero fit outputs
-            cuda.memcpy_htod_async(self.fit_res_gpu, self.fit_res_zeroer, stream=to_use)
-            cuda.memcpy_htod_async(self.CRLB_gpu, self.CRLB_zeroer, stream=to_use)
-            cuda.memcpy_htod_async(self.LLH_gpu, self.LLH_zeroer, stream=to_use)
 
-            numBlock = int(np.min([self.fit_chunk_size, self.n_candidates - indy]))
-
-            cuda.memcpy_htod_async(self.candidate_position_chunk_gpu, self.candidate_positions[indy:(indy + numBlock)], stream=to_use)
-
-            # note that which fitFunc we use has already been decided by whether background was subtracted in detection
-            self.pix_threads_astig_bkgndsub_mle(self.data_gpu, self.guess_psf_sigma, self.iterations, self.fit_res_gpu, self.CRLB_gpu,
-                                                self.LLH_gpu, self.variance_over_gain_squared_gpu, self.calculate_crb, self.candidate_position_chunk_gpu,
-                                                self.n_columns, self.bkgnd_gpu,  # self.testROI_gpu,
-                                                block=(ROISize, ROISize, 1), grid=(numBlock, 1), stream=to_use)
-
-
-            cuda.memcpy_dtoh_async(self.fit_res[6 * indy:6 * (indy + numBlock)], self.fit_res_gpu, stream=to_use)
-            cuda.memcpy_dtoh_async(self.CRLB[6*indy:6*(indy + numBlock)], self.CRLB_gpu, stream=to_use)
-            cuda.memcpy_dtoh_async(self.LLH[indy:(indy + numBlock)], self.LLH_gpu, stream=to_use)
-            indy += numBlock
-            stream_counter += 1
-
-
-        # uncomment if using testROI for dummy-checking:
-        #cuda.memcpy_dtoh(self.testROI, self.testROI_gpu)
-        #import matplotlib.pyplot as plt
-        #plt.imshow(self.testROI, interpolation='nearest')
-        #plt.show()
-
-        # synchronize streams, recall a fast version of ceil(a/b) = (a - 1)/b + 1
-        for stream_index in range(min([int((self.n_candidates - 1) / self.fit_chunk_size) + 1, self.num_streams])):
-            self.streams[stream_index].synchronize()
-
-        return
 
     def offIt(self):
         """
