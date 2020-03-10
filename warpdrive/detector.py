@@ -129,8 +129,9 @@ class detector(object):
         cuda.memcpy_htod(self.n_candidates_gpu, self.n_candidates)
         self.n_max_candidates_per_frame = np.int32(800)
         self.fit_chunk_size = 32
-        self.candidate_positions = np.zeros(self.n_max_candidates_per_frame, dtype=np.int32) # This size of this array sets the limit on the number of candidate molecules per frame
-        self.candidate_positions_gpu = cuda.mem_alloc(self.candidate_positions.size * self.candidate_positions.dtype.itemsize)
+        self.candidate_positions = np.zeros(self.n_max_candidates_per_frame, dtype=np.int32)
+        self.candidate_positions_gpu = cuda.mem_alloc(self.candidate_positions.size *
+                                                      self.candidate_positions.dtype.itemsize)
         cuda.memcpy_htod(self.candidate_positions_gpu, self.candidate_positions)
 
         self.darkmap_gpu = cuda.mem_alloc(self.dsize)
@@ -186,13 +187,13 @@ class detector(object):
 
         Parameters
         ----------
-            varmap: ndarray
-                variance map [e-^2]
-            flatmap: ndarray
-                flatmap [unitless, mean-normalized], can be calculated as (1/gain)/mean(1/gain). The conversion from
-                flatmap to gainmap [ADU/e-] is done in-line as it is sent to GPU.
-            electronsPerCount: float
-                Conversion factor from ADU to e-, [e-/ADU]
+        varmap: ndarray
+            variance map [e-^2]
+        flatmap: ndarray
+            flatmap [unitless, mean-normalized], can be calculated as (1/gain)/mean(1/gain). The conversion from
+            flatmap to gainmap [ADU/e-] is done in-line as it is sent to GPU.
+        electronsPerCount: float
+            Conversion factor from ADU to e-, [e-/ADU]
 
         Notes
         -----
@@ -258,7 +259,8 @@ class detector(object):
         self.raw_adu_to_e_and_estimate_noise(self.data_gpu, self.varmap_gpu, self.darkmap_gpu, self.flatmap_gpu,
                                              self._noise_factor, self._electrons_per_count, self._em_gain,
                                              self.noise_sigma_gpu,
-                                             block=(self.nrows, 1, 1), grid=(self.ncolumns, 1), stream=self.main_stream_r)
+                                             block=(self.nrows, 1, 1), grid=(self.ncolumns, 1),
+                                             stream=self.main_stream_r)
 
         # main_stream_r is synchronized in difference_of_gaussian_filter, so no need to repeat that here.
 
@@ -328,8 +330,8 @@ class detector(object):
         """
         getCand should only be called after smoothFrame. It performs a maximum filter on the smoothed image, then finds
         all points (farther than half-ROIsize away from the frame-border) at which the maximum filter is equal to the
-        smoothed image. The positions are then added to self.candidate_positions, as measured in pixels taking the frame as a
-        1D-array
+        smoothed image. The positions are then added to self.candidate_positions, as measured in pixels taking the frame
+        as a 1D-array
         """
         # maxFilter size will be 2*halfMaxFilt + 1
         self.halfMaxFilt = np.int32(np.floor(0.5*ROISize) - 1)
@@ -343,8 +345,8 @@ class detector(object):
                      grid=(self.ncolumns, 1), stream=self.main_stream_r)
 
         self.find_candidates_noise_thresh(self.unif1_gpu, self.maxf_data_gpu, np.float32(thresh), self.n_candidates_gpu,
-                                          self.candidate_positions_gpu, self.n_max_candidates_per_frame, np.int32(0.5 * ROISize),
-                                          self.noise_sigma_gpu,
+                                          self.candidate_positions_gpu, self.n_max_candidates_per_frame,
+                                          np.int32(0.5 * ROISize), self.noise_sigma_gpu,
                                           block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.main_stream_r)
 
         # retrieve number of candidates for block/grid allocation in fitting
