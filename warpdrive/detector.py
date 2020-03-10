@@ -288,11 +288,6 @@ class detector(object):
             nothing, but fit parameters are held (on both CPU and GPU) by detector instance
 
         """
-        #print('Data: mu = %f +- %f' % (np.mean(photondat), np.std(photondat)))
-        #print('Background: %s' % (bkgnd is None))
-        # make sure that the data is contiguous, and send to GPU
-        # self.data = np.ascontiguousarray(data, dtype=np.float32)
-        # cuda.memcpy_htod_async(self.data_gpu, self.data, stream=self.main_stream_r)
         if background is None:
             # make sure background is zero'd on gpu
             cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(np.zeros(self.dshape), dtype=np.float32),
@@ -333,11 +328,11 @@ class detector(object):
         self.main_stream_c.synchronize()
 
         ############################# generate and subtract smooth iamges ###################################
-        # (float *unifsmalldat,  float *unifsmallvar, float *uniflargedat, float *uniflargevar,int colsize, int halfFilt)
         self.weighted_dog(self.unif1_gpu, self.unif1v_gpu, self.unif2_gpu, self.unif2v_gpu, self.n_columns,
-                          self.halfsize_large_filter, block=(self.ncolumns, 1, 1), grid=(self.nrows, 1), stream=self.main_stream_r)
+                          self.halfsize_large_filter, block=(self.ncolumns, 1, 1), grid=(self.nrows, 1),
+                          stream=self.main_stream_r)
 
-        # A stream.sync is unnecessary here because the next call, maxfrow in getCand is also in main_stream_r
+        # A stream.sync is unnecessary here because the next call, maxfrow in get_candidates is also in main_stream_r
 
 
     def get_candidates(self, thresh=4, ROISize=16):
