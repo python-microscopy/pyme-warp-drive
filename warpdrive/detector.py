@@ -96,6 +96,10 @@ class detector(object):
 
         self.set_filter_kernels(small_filter_size, large_filter_size)
 
+    def __del__(self):
+        # flush profiling data to file
+        cuda.stop_profiler()
+
     def allocate_memory(self, dshape):
         """
         Allocate memory on the GPU. These allocations will be held until the detector object is destroyed.
