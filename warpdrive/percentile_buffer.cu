@@ -80,6 +80,53 @@ __global__ void update_frame(float *frames, float *new_frame, const int frame_nu
     data[ind] = (data[ind] - darkmap[ind]) * flatmap[ind] * electrons_per_count;
 }
 
+__device__ float d_raw_adu_to_electrons(const float data, const float darkmap, const float flatmap,
+const float electrons_per_count)
+/*
+    Subtract ADO, flatfield, and convert from ADU to electrons
+
+    Parameters
+    ----------
+    data: input data [ADU]
+    darkmap: Analog-digital offset [ADU]
+    flatmap: flatfield value - PYME style, i.e. mean-normalized across the chip, unitless.
+    electrons_per_count: conversion factor between ADU and electrons
+
+    Returns
+    -------
+    e_data: input data camera-corrected and converted to electrons [e-]
+*/
+{
+    return (data - darkmap) * flatmap * electrons_per_count;
+}
+
+__global__ void update_frame_and_convert_raw_adu_to_electrons(float *frames, float *new_frame, const int frame_num,
+const int buffer_length, float *darkmap, float *flatmap, const float electrons_per_count)
+/*
+    Load a frame into the buffer, camera-correcting the raw ADU to units of electrons in the process.
+
+    Maximum of 1024 threads per block, so call with block=(image.shape[0], 1, 1), grid=(image.shape[1], 1)
+
+    Parameters
+    ----------
+    frames: stack of data, all frames held in the buffer. Since they should only be filled using this function, they
+        will be in units of [e-]
+    new_frame: frame to insert into the buffer, not yet converted to electrons. [ADU]
+    frame_num: index to insert into the buffer
+    buffer length: size of the buffer, in units of frames (slices)
+    darkmap: Analog-digital offset [ADU]
+    flatmap: flatfield value - PYME style, i.e. mean-normalized across the chip, unitless.
+    electrons_per_count: conversion factor between ADU and electrons
+*/
+{
+    // data_loc: row-major 3D index the same pixel in depth (fastest changing)
+    int data_loc = frame_num + buffer_length * (blockIdx.x + gridDim.x * threadIdx.x);
+    int frame_loc = blockIdx.x + threadIdx.x * gridDim.x;  // frame_loc: position within new frame to grab
+
+    // replace value with new frame value
+    frames[data_loc] = d_raw_adu_to_electrons(new_frame[frame_loc], darkmap[frame_loc], flatmap[frame_loc],
+                                              electrons_per_count);
+}
 
 __global__ void nth_value_by_pixel_search_sort(float *frames, const int n, float *nth_values)
 /*
