@@ -23,6 +23,9 @@ class IOErrorDataBuffer(object):
 PERCENTILE = 0.25
 IMSIZE_R = 960
 IMSIZE_C = 240
+DARKMAP = np.ones((IMSIZE_R, IMSIZE_C), dtype=np.float32)  # random datasource is range[1, maxint16]
+FLATMAP = (1 + (np.random.rand(IMSIZE_R, IMSIZE_C) / 2 - 0.25)).astype(np.float32)
+EPERADU = np.float32(0.41)
 
 
 ds = DataSource(IMSIZE_R, IMSIZE_C, 100)
@@ -32,8 +35,9 @@ EBUFF = IOErrorDataBuffer(DBUFF)
 
 def get_cpu_background(indices):
     cpu_buffer = np.empty((IMSIZE_R, IMSIZE_C, len(indices)))
-    for ind, fi in enumerate(indices):  # g_buf.buffer_length):
-        cpu_buffer[:, :, ind] = DBUFF.getSlice(fi)
+    for ind, fi in enumerate(indices):
+        # convert to electrons here so that we mimic the rounding errors we'd get on the GPU
+        cpu_buffer[:, :, ind] = (DBUFF.getSlice(fi).astype(np.float32) - DARKMAP) * FLATMAP * EPERADU
     cpu_sorted = np.sort(cpu_buffer[:, :, :len(indices)], axis=2)
     index_to_grab = np.int32(max([round(PERCENTILE * len(indices)) - 1, 0]))
     bg_cpu = cpu_sorted[:, :, index_to_grab]
@@ -49,11 +53,11 @@ def gpu_cpu_comparison(buffer_length, indices, g_buf=None):
 
     if g_buf is None:
         # make GPU buffer
-        g_buf = Buffer(DBUFF, percentile=PERCENTILE, buffer_length=buffer_length)
+        g_buf = Buffer(DBUFF, PERCENTILE, buffer_length, DARKMAP, FLATMAP, EPERADU)
 
     for bg_indices in indices:
         bg_cpu = get_cpu_background(bg_indices)
-        bg_gpu = g_buf.getBackground(bg_indices, convert_to_electrons=False)
+        bg_gpu = g_buf.getBackground(bg_indices)
 
         assert np.array_equal(bg_cpu, bg_gpu)
 
@@ -83,7 +87,7 @@ def simulate_IOError(buffer_length, fail_at):
     fail_queue[fail_ind] = True
 
     # make GPU buffer with fallible data buffer
-    g_buf = Buffer(EBUFF, percentile=PERCENTILE, buffer_length=buffer_length)
+    g_buf = Buffer(EBUFF, PERCENTILE, buffer_length, DARKMAP, FLATMAP, EPERADU)
 
     for bg_indices, fail in zip(indices, fail_queue):
         g_buf.data_buffer.fail = fail  # getSlice will fail if True
@@ -92,7 +96,7 @@ def simulate_IOError(buffer_length, fail_at):
         bg_cpu = get_cpu_background(bg_indices)
         # our poor gpu buffer, however, does not
         try:
-            bg_gpu = g_buf.getBackground(bg_indices, convert_to_electrons=False)
+            bg_gpu = g_buf.getBackground(bg_indices)
         except IOError:
             pass
         # if there is no error, then the two calculations should be identical

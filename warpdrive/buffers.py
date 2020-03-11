@@ -55,7 +55,7 @@ class Buffer(to_subclass):
         cuda.memcpy_htod_async(self.frames_gpu, self.frames, stream=self.bg_streamer)  # TODO - remove, part of hacky fix to pass test_recycling_after_IOError
 
         # camera correction ~hack. TODO make gpu camera map manager
-        self.electrons_per_count = electrons_per_count
+        self.electrons_per_count = np.float32(electrons_per_count)
         self.darkmap_gpu, self.flatmap_gpu = None, None
         map_mem_size = pix_r * pix_c * self.cur_bg.dtype.itemsize
         if darkmap is not None:
@@ -93,9 +93,7 @@ class Buffer(to_subclass):
         self.nth_value_by_pixel_search_sort = mod.get_function('nth_value_by_pixel_search_sort')
         self.nth_value_by_pixel_search_sort_dynamic = mod.get_function('nth_value_by_pixel_search_sort_dynamic')
         self.clear_frame = mod.get_function('clear_frame')
-        self.update_frame = mod.get_function('update_frame')
-        self.subtract_b_from_a = mod.get_function('subtract_b_from_a')
-        self.raw_adu_to_electrons = mod.get_function('raw_adu_to_electrons')
+        self.update_frame_and_convert_adu_to_e = mod.get_function('update_frame_and_convert_raw_adu_to_electrons')
 
     def update(self, frame, position, frame_data):
         """
@@ -110,7 +108,7 @@ class Buffer(to_subclass):
         position : int
             position index where frame will be inserted in the buffer array held on the GPU.
         frame_data : ndarray
-            frame data as numpy.float32, contiguous in memory
+            frame data as numpy.float32, contiguous in memory, units of ADU
         Returns
         -------
         Nothing
@@ -119,8 +117,11 @@ class Buffer(to_subclass):
         # send new frame to GPU
         cuda.memcpy_htod_async(self.new_frame_gpu, frame_data, stream=self.bg_streamer)
         # update the frame buffer on the GPU
-        self.update_frame(self.frames_gpu, self.new_frame_gpu, position, np.int32(self.buffer_length),
-                          block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1), stream=self.bg_streamer)
+        self.update_frame_and_convert_adu_to_e(self.frames_gpu, self.new_frame_gpu, position,
+                                               np.int32(self.buffer_length), self.darkmap_gpu, self.flatmap_gpu,
+                                               self.electrons_per_count,
+                                               block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1),
+                                               stream=self.bg_streamer)
 
         # update position dict
         self.cur_positions[frame] = position
@@ -189,7 +190,7 @@ class Buffer(to_subclass):
         for frame in uncleared:
             self.clear(frame)
 
-    def calc_background(self, bg_indices, convert_to_electrons=True):
+    def calc_background(self, bg_indices):
         """
 
         Just calculates the background, does not return it, nor does it wait for the calculation to terminate before
@@ -249,18 +250,6 @@ class Buffer(to_subclass):
                                                         stream=self.bg_streamer,
                                                         shared=2 * 2 * self.buffer_length * 4)
 
-
-
-
-        if convert_to_electrons:
-            warp_count_x = int(np.ceil(self.slice_shape[0] / 32.0))
-            # self.subtract_b_from_a(self.cur_bg_gpu, self.dark_map_gpu,
-            #                        block=(32, 1, 1), grid=(warp_count_x, self.slice_shape[1]), stream=self.bg_streamer)
-            # do this in the same stream as the background calculation
-            self.raw_adu_to_electrons(self.cur_bg_gpu, self.darkmap_gpu, self.flatmap_gpu,
-                                      np.int32(self.electrons_per_count), block=(32, 1, 1),
-                                      grid=(warp_count_x, self.slice_shape[1]), stream=self.bg_streamer)
-
         # NB - this function does not wait for the calculation to finish before returning, and does not copy anything
         # back to the GPU!
 
@@ -305,11 +294,11 @@ class Buffer(to_subclass):
         """
         self.bg_streamer.synchronize()
 
-    def getBackground(self, bg_indices, convert_to_electrons=True):
+    def getBackground(self, bg_indices):
         """
 
         Calculates the background and waits for the calculation to terminate before returning the background estimate.
-        This function is useful if you need the background estimation performed in a non-asynchronous fashion.
+        This function is useful if you need the background estimation performed in a synchronous fashion.
 
         Parameters
         ----------
@@ -324,7 +313,7 @@ class Buffer(to_subclass):
         """
 
         # estimate the background
-        self.calc_background(bg_indices, convert_to_electrons=convert_to_electrons)
+        self.calc_background(bg_indices)
         # bring it back from the GPU
         cuda.memcpy_dtoh_async(self.cur_bg, self.cur_bg_gpu, stream=self.bg_streamer)
 
@@ -348,121 +337,3 @@ class Buffer(to_subclass):
         cuda.memcpy_dtoh_async(self.cur_bg, self.cur_bg_gpu, stream=self.bg_streamer)
         self.sync_calculation()
         return self.cur_bg
-
-
-
-# ----------- main() for testing GPU buffer sorting -----------
-
-
-
-class dbuff(object):
-    # TODO - move this dummy object into a proper unit test script along with main()
-    pass
-
-def main():
-    from PYME.IO.DataSources.RandomDataSource import DataSource
-    percentile = 0.25
-    # run a test
-    imsz_r = 960
-    imsz_c = 240
-    buffer_length = 31
-    indices = set(range(7))
-
-    ds = DataSource(imsz_r, imsz_c, 100)
-    dbuff.dataSource = ds
-    g_buf = Buffer(dbuff, percentile=percentile, buffer_length=buffer_length)
-
-    bg_gpu = g_buf.getBackground(indices)
-
-    # check if this is also what the CPU gets
-    cpu_buffer = np.empty((imsz_r, imsz_c, g_buf.buffer_length))
-    for fi in sorted(indices):#g_buf.buffer_length):
-        cpu_buffer[:, :, fi] = dbuff.dataSource.getSlice(fi)
-    cpu_sorted = np.sort(cpu_buffer[:,:,:len(indices)], axis=2)
-    index_to_grab = np.int32(max([round(percentile * len(indices)) - 1, 0]))
-    bg_cpu = cpu_sorted[:, :, index_to_grab]
-
-    success = np.array_equal(bg_cpu, bg_gpu)
-    print('test passed: %r' % success)
-
-
-    benchmark = False
-    if benchmark:
-        import timeit
-        setup_script = """class buff(object):
-            pass
-
-        from PYME.IO.DataSources.RandomDataSource import DataSource
-        from warpdrive.buffers import Buffer
-
-        percentile = 0.25
-        # run a test
-        ds = DataSource(960, 240, 100)
-        buff.dataSource = ds
-        g_buf = Buffer(buff, percentile=percentile, buffer_length=32)
-        indices = set(range(32))
-        """
-        timeit.timeit('g_buf.getBackground(indices)', setup=setup_script, number=1000)
-
-        setup_script = """class buff(object):
-            pass
-
-        from PYME.IO.DataSources.RandomDataSource import DataSource
-        from warpdrive.buffers import Buffer
-
-        percentile = 0.25
-        # run a test
-        ds = DataSource(960, 240, 100)
-        buff.dataSource = ds
-        g_buf = Buffer(buff, percentile=percentile)
-        g_buf.getBackground(set(range(32)))
-        indices = set(range(1,33))
-        """
-        timeit.timeit('g_buf.getBackground(indices)', setup=setup_script, number=1000)
-
-        setup_cpu = """
-        class buff(object):
-            pass
-
-        from PYME.IO.DataSources.RandomDataSource import DataSource
-
-        percentile = 0.25
-        # run a test
-        ds = DataSource(960, 240, 100)
-
-        dbuff = buff()
-        dbuff.dataSource = ds
-
-        dbuff.getSlice = ds.getSlice
-        from PYME.IO.buffers import backgroundBufferM
-        c_buf = backgroundBufferM(dbuff, percentile=percentile)
-        indices = set(range(32))
-        """
-
-        timeit.timeit('c_buf.getBackground(indices)', setup=setup_cpu, number=1000)
-
-        setup_cpu = """
-        class buff(object):
-            pass
-
-        from PYME.IO.DataSources.RandomDataSource import DataSource
-
-        percentile = 0.25
-        # run a test
-        ds = DataSource(960, 240, 100)
-
-        dbuff = buff()
-        dbuff.dataSource = ds
-
-        dbuff.getSlice = ds.getSlice
-        from PYME.IO.buffers import backgroundBufferM
-        c_buf = backgroundBufferM(dbuff, percentile=percentile)
-        c_buf.getBackground(set(range(32)))
-        indices = set(range(1, 33))
-        """
-
-        timeit.timeit('c_buf.getBackground(indices)', setup=setup_cpu, number=1000)
-
-if __name__ == '__main__':
-    main()
-
