@@ -162,11 +162,15 @@ class detector(object):
 
     def set_filter_kernels(self, small_filter_size, large_filter_size):
         """
-        fixme - add note about running prepare_maps after
+        Reallocates uniform filter kernels on the gpu. Note that the actual memcpy takes place in `prepare_maps` which
+        should be called immediately after this function.
+
         Parameters
         ----------
-        small_filter_size
-        large_filter_size
+        small_filter_size: int
+            length of smaller filter
+        large_filter_size: int
+            length of larger filter, typically 2 * `small_filter_size`
 
         Returns
         -------
