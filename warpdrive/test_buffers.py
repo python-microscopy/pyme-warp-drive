@@ -36,9 +36,23 @@ EBUFF = IOErrorDataBuffer(DBUFF)
 def get_cpu_background(indices):
     cpu_buffer = np.empty((IMSIZE_R, IMSIZE_C, len(indices)))
     for ind, fi in enumerate(indices):
+        cpu_buffer[:, :, ind] = DBUFF.getSlice(fi).astype(np.float32)
+    cpu_sorted = np.sort(cpu_buffer[:, :, :len(indices)], axis=2).astype(np.float32)  # sort converts to 64 on some numpy
+    index_to_grab = np.int32(max([round(PERCENTILE * len(indices)) - 1, 0]))
+    bg_cpu = (cpu_sorted[:, :, index_to_grab] - DARKMAP) * FLATMAP * EPERADU
+    return bg_cpu
+
+def get_cpu_background_convert_adutoe_on_insert(indices):
+    """
+    Using np.testing.assert_array_equal rather than almost equal requires us to maintain
+    the same data-types (and rounding errors) throughout. This allows us to test
+    against GPU code that holds the background buffer in e- rather than ADU.
+    """
+    cpu_buffer = np.empty((IMSIZE_R, IMSIZE_C, len(indices)))
+    for ind, fi in enumerate(indices):
         # convert to electrons here so that we mimic the rounding errors we'd get on the GPU
         cpu_buffer[:, :, ind] = (DBUFF.getSlice(fi).astype(np.float32) - DARKMAP) * FLATMAP * EPERADU
-    cpu_sorted = np.sort(cpu_buffer[:, :, :len(indices)], axis=2)
+    cpu_sorted = np.sort(cpu_buffer[:, :, :len(indices)], axis=2).astype(np.float32)  # sort converts to 64 on some numpy
     index_to_grab = np.int32(max([round(PERCENTILE * len(indices)) - 1, 0]))
     bg_cpu = cpu_sorted[:, :, index_to_grab]
     return bg_cpu

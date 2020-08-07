@@ -93,7 +93,8 @@ class Buffer(to_subclass):
         self.nth_value_by_pixel_search_sort = mod.get_function('nth_value_by_pixel_search_sort')
         self.nth_value_by_pixel_search_sort_dynamic = mod.get_function('nth_value_by_pixel_search_sort_dynamic')
         self.clear_frame = mod.get_function('clear_frame')
-        self.update_frame_and_convert_adu_to_e = mod.get_function('update_frame_and_convert_raw_adu_to_electrons')
+        self.update_frame = mod.get_function('update_frame')
+        self.raw_adu_to_electrons = mod.get_function('raw_adu_to_electrons')
 
     def update(self, frame, position, frame_data):
         """
@@ -117,11 +118,14 @@ class Buffer(to_subclass):
         # send new frame to GPU
         cuda.memcpy_htod_async(self.new_frame_gpu, frame_data, stream=self.bg_streamer)
         # update the frame buffer on the GPU
-        self.update_frame_and_convert_adu_to_e(self.frames_gpu, self.new_frame_gpu, position,
-                                               np.int32(self.buffer_length), self.darkmap_gpu, self.flatmap_gpu,
-                                               self.electrons_per_count,
-                                               block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1),
-                                               stream=self.bg_streamer)
+        # self.update_frame_and_convert_adu_to_e(self.frames_gpu, self.new_frame_gpu, position,
+        #                                        np.int32(self.buffer_length), self.darkmap_gpu, self.flatmap_gpu,
+        #                                        self.electrons_per_count,
+        #                                        block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1),
+        #                                        stream=self.bg_streamer)
+
+        self.update_frame(self.frames_gpu, self.new_frame_gpu, position, np.int32(self.buffer_length),
+                          block=(self.slice_shape[0], 1, 1), grid=(self.slice_shape[1], 1), stream=self.bg_streamer)
 
         # update position dict
         self.cur_positions[frame] = position
@@ -252,6 +256,11 @@ class Buffer(to_subclass):
 
         # NB - this function does not wait for the calculation to finish before returning, and does not copy anything
         # back to the GPU!
+        warp_count_x = int(np.ceil(self.slice_shape[0] / 32.0))
+        self.raw_adu_to_electrons(self.cur_bg_gpu, self.darkmap_gpu, self.flatmap_gpu,
+                                    self.electrons_per_count, block=(32, 1, 1),
+                                    grid=(warp_count_x, self.slice_shape[1]), stream=self.bg_streamer)
+
 
     def calc_background_quicksort(self, bg_indices, subtract_dark_map=True):
         """
@@ -337,3 +346,8 @@ class Buffer(to_subclass):
         cuda.memcpy_dtoh_async(self.cur_bg, self.cur_bg_gpu, stream=self.bg_streamer)
         self.sync_calculation()
         return self.cur_bg
+    
+
+    def __del__(self):
+        # flush profiling data to file
+        cuda.stop_profiler()
