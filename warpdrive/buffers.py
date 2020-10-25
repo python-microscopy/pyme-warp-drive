@@ -4,7 +4,7 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 import numpy as np
 from . import buffers_cu
-
+import logging
 # It is convenient in the python-microsocpy environment (PYME) if this buffer is a subclass, but to keep things somewhat
 # independent, we can fall back to subclassing object if PYME is not available
 try:
@@ -14,6 +14,9 @@ except ImportError:
     raise RuntimeWarning('Cannot import python-microscopy environment (PYME) background buffer - this buffer might ' 
                          'not interface correctly with PYME')
 
+logger = logging.getLogger(__name__)
+logging.debug('compiling percentile buffer module')
+COMPILED_MODULE = buffers_cu.percentile_buffer()
 
 class Buffer(to_subclass):
     """
@@ -73,27 +76,21 @@ class Buffer(to_subclass):
             cuda.memcpy_htod(self.flatmap_gpu, np.ascontiguousarray(flatmap, dtype=np.float32))
 
 
-        #---- compile
-        print('compiling!\n')
-        self.compile()
+        #---- get compiled function handles
+        self._get_compiled_modules()
 
-    def compile(self):
+    def _get_compiled_modules(self):
         """
 
-        Compiles CUDA functions using PyCUDA SourceModule
-
-        Returns
-        -------
-        Nothing
+        Get CUDA functions from PyCUDA SourceModule
 
         """
-        mod = buffers_cu.percentile_buffer()
-        self.nth_value_by_pixel = mod.get_function('nth_value_by_pixel')
-        self.nth_value_by_pixel_shared_quicksort = mod.get_function('nth_value_by_pixel_shared_quicksort')
-        self.nth_value_by_pixel_search_sort = mod.get_function('nth_value_by_pixel_search_sort')
-        self.nth_value_by_pixel_search_sort_dynamic = mod.get_function('nth_value_by_pixel_search_sort_dynamic')
-        self.clear_frame = mod.get_function('clear_frame')
-        self.update_frame_and_convert_adu_to_e = mod.get_function('update_frame_and_convert_raw_adu_to_electrons')
+        self.nth_value_by_pixel = COMPILED_MODULE.get_function('nth_value_by_pixel')
+        self.nth_value_by_pixel_shared_quicksort = COMPILED_MODULE.get_function('nth_value_by_pixel_shared_quicksort')
+        self.nth_value_by_pixel_search_sort = COMPILED_MODULE.get_function('nth_value_by_pixel_search_sort')
+        self.nth_value_by_pixel_search_sort_dynamic = COMPILED_MODULE.get_function('nth_value_by_pixel_search_sort_dynamic')
+        self.clear_frame = COMPILED_MODULE.get_function('clear_frame')
+        self.update_frame_and_convert_adu_to_e = COMPILED_MODULE.get_function('update_frame_and_convert_raw_adu_to_electrons')
 
     def update(self, frame, position, frame_data):
         """
