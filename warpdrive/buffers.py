@@ -34,6 +34,9 @@ class Buffer(to_subclass):
         self.cur_positions = {}
         self.available = list(range(buffer_length))
 
+        # create stream so background can be estimated asynchronously
+        self.bg_streamer = cuda.Stream()
+
         # cuda.mem_alloc expects python int; avoid potential np.int64
         self.slice_shape = [int(d) for d in self.data_buffer.dataSource.getSliceShape()]
 
@@ -43,8 +46,10 @@ class Buffer(to_subclass):
         self.cur_bg_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
 
         # TODO - ideally can initialize as empty, but inf is a part of hacky fix to pass test_recycling_after_IOError
-        self.frames = np.inf*np.ones((pix_r, pix_c, self.buffer_length), np.float32)  # self.frames = np.empty((pix_r, pix_c, self.buffer_length), np.float32)
+        self.frames = np.inf * np.ones((pix_r, pix_c, self.buffer_length), 
+                                       np.float32)
         self.frames_gpu = cuda.mem_alloc(self.frames.size * self.frames.dtype.itemsize)
+        cuda.memcpy_htod_async(self.frames_gpu, self.frames, stream=self.bg_streamer)  # TODO - remove, part of hacky fix to pass test_recycling_after_IOError
 
         # a = self.frames_gpu.as_buffer()
 
@@ -52,10 +57,6 @@ class Buffer(to_subclass):
         # self.to_wipe_gpu = cuda.mem_alloc(self.to_wipe.size * self.to_wipe.dtype.itemsize)
 
         self.new_frame_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
-
-        # create stream so background can be estimated asynchronously
-        self.bg_streamer = cuda.Stream()
-        cuda.memcpy_htod_async(self.frames_gpu, self.frames, stream=self.bg_streamer)  # TODO - remove, part of hacky fix to pass test_recycling_after_IOError
 
         # camera correction ~hack. TODO make gpu camera map manager
         self.electrons_per_count = np.float32(electrons_per_count)
@@ -80,20 +81,49 @@ class Buffer(to_subclass):
         self._get_compiled_modules()
     
     def refresh_settings(self, percentile, buffer_length):
-        self.buffer_length = buffer_length
-        self.percentile = percentile
+        """Make sure the Buffer instance has the desired percentile and buffer
+        length
 
-        self.index_to_grab = np.int32(max([round(self.percentile * buffer_length) - 1, 0]))
-
-        self.cur_frames = set()
-        self.cur_positions = {}
-        self.available = list(range(buffer_length))
+        Parameters
+        ----------
+        percentile : float
+            fractional index to grab at each pixel (i.e. 0.5 corresponds to 
+            the median)
+        buffer_length : int
+            max number of frames that fit in the buffer and the per-xy-pixel
+            percentile is calculated on.
         
-        # reallocate frames arrays
-        pix_r, pix_c = self.slice_shape
-        # TODO - ideally can initialize as empty, but inf is a part of hacky fix to pass test_recycling_after_IOError
-        self.frames = np.inf*np.ones((pix_r, pix_c, self.buffer_length), np.float32)  # self.frames = np.empty((pix_r, pix_c, self.buffer_length), np.float32)
-        self.frames_gpu = cuda.mem_alloc(self.frames.size * self.frames.dtype.itemsize)
+        Notes
+        -----
+        Buffer instance must maintain the same xy shape, for the same
+        datasource, with the same dark and flatfield maps. Otherwise, 
+        instantiate a new Buffer!
+        """
+        if percentile != self.percentile:
+            logger.debug('changing percentile: %.3f -> %.3f' % (self.percentile,
+                                                                percentile))
+            self.percentile = percentile
+            self.index_to_grab = np.int32(max([round(self.percentile * buffer_length) - 1, 0]))     
+
+        if buffer_length != self.buffer_length:
+            logger.debug('changing buffer length: %d -> %d' % (self.buffer_length,
+                                                               buffer_length))
+            self.buffer_length = buffer_length
+            # changing the buffer length changes the index to grab
+            self.index_to_grab = np.int32(max([round(self.percentile * buffer_length) - 1, 0])) 
+
+            self.cur_frames = set()
+            self.cur_positions = {}
+            self.available = list(range(buffer_length))
+            
+            # reallocate frames arrays
+            pix_r, pix_c = self.slice_shape
+            # TODO - ideally can initialize as empty, but inf is a part of hacky fix to pass test_recycling_after_IOError
+            self.frames = np.inf*np.ones((pix_r, pix_c, self.buffer_length), 
+                                         np.float32)
+            self.frames_gpu = cuda.mem_alloc(self.frames.size * self.frames.dtype.itemsize)
+            cuda.memcpy_htod_async(self.frames_gpu, self.frames, 
+                                   stream=self.bg_streamer)  # TODO - remove, part of hacky fix to pass test_recycling_after_IOError
 
     def _get_compiled_modules(self):
         """
