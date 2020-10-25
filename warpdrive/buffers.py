@@ -78,6 +78,22 @@ class Buffer(to_subclass):
 
         #---- get compiled function handles
         self._get_compiled_modules()
+    
+    def refresh_settings(self, percentile, buffer_length):
+        self.buffer_length = buffer_length
+        self.percentile = percentile
+
+        self.index_to_grab = np.int32(max([round(self.percentile * buffer_length) - 1, 0]))
+
+        self.cur_frames = set()
+        self.cur_positions = {}
+        self.available = list(range(buffer_length))
+        
+        # reallocate frames arrays
+        pix_r, pix_c = self.slice_shape
+        # TODO - ideally can initialize as empty, but inf is a part of hacky fix to pass test_recycling_after_IOError
+        self.frames = np.inf*np.ones((pix_r, pix_c, self.buffer_length), np.float32)  # self.frames = np.empty((pix_r, pix_c, self.buffer_length), np.float32)
+        self.frames_gpu = cuda.mem_alloc(self.frames.size * self.frames.dtype.itemsize)
 
     def _get_compiled_modules(self):
         """
