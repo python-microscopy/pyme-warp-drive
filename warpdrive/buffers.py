@@ -4,7 +4,7 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 import numpy as np
 from . import buffers_cu
-
+import logging
 # It is convenient in the python-microsocpy environment (PYME) if this buffer is a subclass, but to keep things somewhat
 # independent, we can fall back to subclassing object if PYME is not available
 try:
@@ -14,6 +14,9 @@ except ImportError:
     raise RuntimeWarning('Cannot import python-microscopy environment (PYME) background buffer - this buffer might ' 
                          'not interface correctly with PYME')
 
+logger = logging.getLogger(__name__)
+logging.debug('compiling percentile buffer module')
+COMPILED_MODULE = buffers_cu.percentile_buffer()
 
 class Buffer(to_subclass):
     """
@@ -31,6 +34,9 @@ class Buffer(to_subclass):
         self.cur_positions = {}
         self.available = list(range(buffer_length))
 
+        # create stream so background can be estimated asynchronously
+        self.bg_streamer = cuda.Stream()
+
         # cuda.mem_alloc expects python int; avoid potential np.int64
         self.slice_shape = [int(d) for d in self.data_buffer.dataSource.getSliceShape()]
 
@@ -40,8 +46,10 @@ class Buffer(to_subclass):
         self.cur_bg_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
 
         # TODO - ideally can initialize as empty, but inf is a part of hacky fix to pass test_recycling_after_IOError
-        self.frames = np.inf*np.ones((pix_r, pix_c, self.buffer_length), np.float32)  # self.frames = np.empty((pix_r, pix_c, self.buffer_length), np.float32)
+        self.frames = np.inf * np.ones((pix_r, pix_c, self.buffer_length), 
+                                       np.float32)
         self.frames_gpu = cuda.mem_alloc(self.frames.size * self.frames.dtype.itemsize)
+        cuda.memcpy_htod_async(self.frames_gpu, self.frames, stream=self.bg_streamer)  # TODO - remove, part of hacky fix to pass test_recycling_after_IOError
 
         # a = self.frames_gpu.as_buffer()
 
@@ -49,10 +57,6 @@ class Buffer(to_subclass):
         # self.to_wipe_gpu = cuda.mem_alloc(self.to_wipe.size * self.to_wipe.dtype.itemsize)
 
         self.new_frame_gpu = cuda.mem_alloc(pix_r * pix_c * self.cur_bg.dtype.itemsize)
-
-        # create stream so background can be estimated asynchronously
-        self.bg_streamer = cuda.Stream()
-        cuda.memcpy_htod_async(self.frames_gpu, self.frames, stream=self.bg_streamer)  # TODO - remove, part of hacky fix to pass test_recycling_after_IOError
 
         # camera correction ~hack. TODO make gpu camera map manager
         self.electrons_per_count = np.float32(electrons_per_count)
@@ -73,27 +77,66 @@ class Buffer(to_subclass):
             cuda.memcpy_htod(self.flatmap_gpu, np.ascontiguousarray(flatmap, dtype=np.float32))
 
 
-        #---- compile
-        print('compiling!\n')
-        self.compile()
+        #---- get compiled function handles
+        self._get_compiled_modules()
+    
+    def refresh_settings(self, percentile, buffer_length):
+        """Make sure the Buffer instance has the desired percentile and buffer
+        length
 
-    def compile(self):
+        Parameters
+        ----------
+        percentile : float
+            fractional index to grab at each pixel (i.e. 0.5 corresponds to 
+            the median)
+        buffer_length : int
+            max number of frames that fit in the buffer and the per-xy-pixel
+            percentile is calculated on.
+        
+        Notes
+        -----
+        Buffer instance must maintain the same xy shape, for the same
+        datasource, with the same dark and flatfield maps. Otherwise, 
+        instantiate a new Buffer!
+        """
+        if percentile != self.percentile:
+            logger.debug('changing percentile: %.3f -> %.3f' % (self.percentile,
+                                                                percentile))
+            self.percentile = percentile
+            self.index_to_grab = np.int32(max([round(self.percentile * buffer_length) - 1, 0]))     
+
+        if buffer_length != self.buffer_length:
+            logger.debug('changing buffer length: %d -> %d' % (self.buffer_length,
+                                                               buffer_length))
+            self.buffer_length = buffer_length
+            # changing the buffer length changes the index to grab
+            self.index_to_grab = np.int32(max([round(self.percentile * buffer_length) - 1, 0])) 
+
+            self.cur_frames = set()
+            self.cur_positions = {}
+            self.available = list(range(buffer_length))
+            
+            # reallocate frames arrays
+            pix_r, pix_c = self.slice_shape
+            # TODO - ideally can initialize as empty, but inf is a part of hacky fix to pass test_recycling_after_IOError
+            self.frames = np.inf*np.ones((pix_r, pix_c, self.buffer_length), 
+                                         np.float32)
+            self.frames_gpu = cuda.mem_alloc(self.frames.size * self.frames.dtype.itemsize)
+            cuda.memcpy_htod_async(self.frames_gpu, self.frames, 
+                                   stream=self.bg_streamer)  # TODO - remove, part of hacky fix to pass test_recycling_after_IOError
+
+    def _get_compiled_modules(self):
         """
 
-        Compiles CUDA functions using PyCUDA SourceModule
-
-        Returns
-        -------
-        Nothing
+        Get CUDA functions from PyCUDA SourceModule
 
         """
-        mod = buffers_cu.percentile_buffer()
-        self.nth_value_by_pixel = mod.get_function('nth_value_by_pixel')
-        self.nth_value_by_pixel_shared_quicksort = mod.get_function('nth_value_by_pixel_shared_quicksort')
-        self.nth_value_by_pixel_search_sort = mod.get_function('nth_value_by_pixel_search_sort')
-        self.nth_value_by_pixel_search_sort_dynamic = mod.get_function('nth_value_by_pixel_search_sort_dynamic')
-        self.clear_frame = mod.get_function('clear_frame')
-        self.update_frame_and_convert_adu_to_e = mod.get_function('update_frame_and_convert_raw_adu_to_electrons')
+        self.nth_value_by_pixel = COMPILED_MODULE.get_function('nth_value_by_pixel')
+        self.nth_value_by_pixel_shared_quicksort = COMPILED_MODULE.get_function('nth_value_by_pixel_shared_quicksort')
+        self.nth_value_by_pixel_search_sort = COMPILED_MODULE.get_function('nth_value_by_pixel_search_sort')
+        self.nth_value_by_pixel_search_sort_dynamic = COMPILED_MODULE.get_function('nth_value_by_pixel_search_sort_dynamic')
+        self.clear_frame = COMPILED_MODULE.get_function('clear_frame')
+        self.update_frame_and_convert_adu_to_e = COMPILED_MODULE.get_function('update_frame_and_convert_raw_adu_to_electrons')
 
     def update(self, frame, position, frame_data):
         """

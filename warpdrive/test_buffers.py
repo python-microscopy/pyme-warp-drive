@@ -33,30 +33,36 @@ ds = DataSource(IMSIZE_R, IMSIZE_C, 100)
 DBUFF = dataBuffer(ds)
 EBUFF = IOErrorDataBuffer(DBUFF)
 
-def get_cpu_background(indices):
+def get_cpu_background(indices, percentile=None):
+    if percentile == None:
+        percentile = PERCENTILE
+    
     cpu_buffer = np.empty((IMSIZE_R, IMSIZE_C, len(indices)))
     for ind, fi in enumerate(indices):
         # convert to electrons here so that we mimic the rounding errors we'd get on the GPU
         cpu_buffer[:, :, ind] = (DBUFF.getSlice(fi).astype(np.float32) - DARKMAP) * FLATMAP * EPERADU
     cpu_sorted = np.sort(cpu_buffer[:, :, :len(indices)], axis=2)
-    index_to_grab = np.int32(max([round(PERCENTILE * len(indices)) - 1, 0]))
+    index_to_grab = np.int32(max([round(percentile * len(indices)) - 1, 0]))
     bg_cpu = cpu_sorted[:, :, index_to_grab]
     return bg_cpu
 
 
-def gpu_cpu_comparison(buffer_length, indices, g_buf=None):
+def gpu_cpu_comparison(buffer_length, indices, g_buf=None, percentile=None):
     try:
         indices[0]
     except:
         # put indices in a list
         indices = [indices]
+    
+    if percentile == None:
+        percentile = PERCENTILE
 
     if g_buf is None:
         # make GPU buffer
-        g_buf = Buffer(DBUFF, PERCENTILE, buffer_length, DARKMAP, FLATMAP, EPERADU)
+        g_buf = Buffer(DBUFF, percentile, buffer_length, DARKMAP, FLATMAP, EPERADU)
 
     for bg_indices in indices:
-        bg_cpu = get_cpu_background(bg_indices)
+        bg_cpu = get_cpu_background(bg_indices, percentile=percentile)
         bg_gpu = g_buf.getBackground(bg_indices)
 
         assert np.array_equal(bg_cpu, bg_gpu)
@@ -148,6 +154,17 @@ def test_recycling_with_overlap(g_buf=None):
     g_buf = gpu_cpu_comparison(buffer_length, indices, g_buf)
     return g_buf
 
+def test_buffer_len_change():
+    g_buff = gpu_cpu_comparison(32, set(range(32)))
+    g_buff.refresh_settings(PERCENTILE, 40)
+    gpu_cpu_comparison(40, set(range(40)), g_buf=g_buff)
+
+def test_buffer_percentile_change():
+    g_buff = gpu_cpu_comparison(32, set(range(32)))
+    new_pct = 0.5
+    g_buff.refresh_settings(new_pct, 32)
+    gpu_cpu_comparison(32, set(range(32)), g_buf=g_buff, percentile=new_pct)
+
 # ----------------- trickier cases --------------------- #
 
 def test_IOError_on_get_frame():
@@ -160,4 +177,10 @@ def test_recycling_after_IOError():
 
     # now test recycling
     test_recycling(g_buf)
-    # test_recycling_with_overlap(g_buf)
+
+def test_recycling_with_overlap_after_IOError():
+    buffer_length = 32
+    g_buf = simulate_IOError(buffer_length, 1.5)
+
+    # now test recycling
+    test_recycling_with_overlap(g_buf)
