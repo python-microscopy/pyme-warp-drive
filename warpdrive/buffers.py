@@ -35,7 +35,16 @@ class Buffer(to_subclass):
         self.available = list(range(buffer_length))
 
         # create stream so background can be estimated asynchronously
-        self.bg_streamer = cuda.Stream()
+        try:
+            self.bg_streamer = cuda.Stream()
+        except cuda.LogicError as e:
+            logger.error(str(e))
+            logger.error('trying to pop/restart default context')
+            from pycuda.tools import make_default_context, clear_context_caches
+            pycuda.autoinit.context.pop()
+            clear_context_caches()
+            pycuda.autoinit.context = make_default_context()
+            pycuda.autoinit.device = pycuda.autoinit.context.get_device()
 
         # cuda.mem_alloc expects python int; avoid potential np.int64
         self.slice_shape = [int(d) for d in self.data_buffer.dataSource.getSliceShape()]
