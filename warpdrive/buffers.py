@@ -1,7 +1,9 @@
 # Andrew Barentine, andrew.barentine@yale.edu
 
 import pycuda.driver as cuda
-import pycuda.autoinit
+from pycuda import tools
+# import pycuda.autoinit
+import atexit
 import numpy as np
 from . import buffers_cu
 import logging
@@ -14,9 +16,20 @@ except ImportError:
     raise RuntimeWarning('Cannot import python-microscopy environment (PYME) background buffer - this buffer might ' 
                          'not interface correctly with PYME')
 
+global COMPILED_MODULE
+
+def init_cuda():
+    global COMPILED_MODULE
+    cuda.init()
+    context = tools.make_default_context()
+    device = context.get_device()
+    atexit.register(context.pop)
+    COMPILED_MODULE = buffers_cu.percentile_buffer()
+
 logger = logging.getLogger(__name__)
 logging.debug('compiling percentile buffer module')
-COMPILED_MODULE = buffers_cu.percentile_buffer()
+init_cuda()
+
 
 class Buffer(to_subclass):
     """
@@ -38,13 +51,10 @@ class Buffer(to_subclass):
         try:
             self.bg_streamer = cuda.Stream()
         except cuda.LogicError as e:
-            logger.error(str(e))
-            logger.error('trying to pop/restart default context')
-            from pycuda.tools import make_default_context, clear_context_caches
-            pycuda.autoinit.context.pop()
-            clear_context_caches()
-            pycuda.autoinit.context = make_default_context()
-            pycuda.autoinit.device = pycuda.autoinit.context.get_device()
+            # context is dead, or invalid
+            logger.exception(e)
+            logger.error('CUDA context is dead or invalid, reinitializing')
+            init_cuda()
 
         # cuda.mem_alloc expects python int; avoid potential np.int64
         self.slice_shape = [int(d) for d in self.data_buffer.dataSource.getSliceShape()]
