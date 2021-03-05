@@ -1,8 +1,9 @@
 # Andrew Barentine, andrew.barentine@yale.edu
 
 import pycuda.driver as cuda
+#from pycuda import tools
+import pycuda.autoinit
 from pycuda import tools
-# import pycuda.autoinit
 import atexit
 import numpy as np
 from . import buffers_cu
@@ -28,7 +29,7 @@ def init_cuda():
 
 logger = logging.getLogger(__name__)
 logging.debug('compiling percentile buffer module')
-init_cuda()
+COMPILED_MODULE = buffers_cu.percentile_buffer()
 
 
 class Buffer(to_subclass):
