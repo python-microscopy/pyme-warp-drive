@@ -154,8 +154,8 @@ int *candidate_indices, const int max_cand_count, const int half_roi_size, float
         if ((blockIdx.x > (half_roi_size + 2)) && ((gridDim.x - blockIdx.x) > (half_roi_size + 2))
            && (threadIdx.x > (half_roi_size + 2)) && ((gridDim.x - threadIdx.x) > (half_roi_size + 2))){
             //maxf_data[dloc] = 1;
-            temp_ind = atomicAdd(counter, 1);
-            if (*counter <= max_cand_count){
+            temp_ind = atomicAdd(counter, 1);  // returns old, i.e. we're still 0-indexed
+            if (*counter < max_cand_count){
                 candidate_indices[temp_ind] = dloc;
             }
         }
