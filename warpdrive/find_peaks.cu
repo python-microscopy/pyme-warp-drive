@@ -95,8 +95,8 @@ int temp;
 if ((unif[dloc] == maxfData[dloc]) && (unif[dloc] > thresh)){
     if ((blockIdx.x > (halfROIsize + 2)) && ((gridDim.x - blockIdx.x) > (halfROIsize + 2)) && (threadIdx.x > (halfROIsize + 2)) &&((colsize - threadIdx.x) > (halfROIsize + 2))){
         maxfData[dloc] = 1;
-        temp = atomicAdd(counter, 1);
-        if (*counter <= maxCandCount){
+        temp = atomicAdd(counter, 1);  // returns old, i.e. we're still 0-indexed
+        if (*counter < maxCandCount){
             candPos[temp] = dloc;
         }
 
