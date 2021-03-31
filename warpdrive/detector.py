@@ -359,6 +359,8 @@ class detector(object):
 
         # retrieve number of candidates for block/grid allocation in fitting
         cuda.memcpy_dtoh_async(self.n_candidates, self.n_candidates_gpu, stream=self.main_stream_r)
+        # we check n_candidates>0, syncrhonize before returning
+        self.main_stream_r.synchronize()
 
 
     def fit_candidates(self, ROISize=16):
