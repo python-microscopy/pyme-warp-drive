@@ -92,4 +92,32 @@ def test_repeatability_multiframe():
             _res = AstigGaussGPUFitFR.FitFactory(np.atleast_3d(ims[ind]), mdh).FindAndFit(1, cameraMaps=camera_info_manager)
             I = np.argsort(_res['fitResults']['x0'])
             np.testing.assert_array_equal(_res['fitResults'][I], res[ind])
-    
+
+def test_camera_correction_and_sigma_calc():
+    import warpdrive as wd
+
+    _, _, im = gen_image()
+    im = im.astype(np.float32)
+    darkmap = 1 * np.ones_like(im)
+    varmap = np.ones_like(im)
+    flatmap = np.ones_like(im)
+    eperadu = np.float32(0.41)
+    noise_factor = np.float32(1.0)
+    em_gain = np.float32(1.0)
+    corrected = (im - darkmap) * flatmap * eperadu
+    sigma = np.sqrt(varmap + noise_factor * noise_factor * em_gain * np.max(np.stack([corrected, np.ones_like(im)]), axis=0) + em_gain * em_gain / eperadu)
+
+
+    _warpdrive = wd.detector()
+    _warpdrive.allocate_memory(np.shape(im))
+    _warpdrive.prepare_maps(darkmap, varmap, flatmap, 
+                            eperadu, noise_factor, em_gain)
+    _warpdrive.prepare_frame(im)
+    wd.cuda.memcpy_dtoh_async(_warpdrive.data, _warpdrive.data_gpu,
+                                      stream=_warpdrive.main_stream_r)
+    _warpdrive.main_stream_r.synchronize()
+    np.testing.assert_array_equal(_warpdrive.data, corrected)
+    wd.cuda.memcpy_dtoh_async(_warpdrive.data, _warpdrive.noise_sigma_gpu,
+                                      stream=_warpdrive.main_stream_r)
+    _warpdrive.main_stream_r.synchronize()
+    np.testing.assert_array_equal(_warpdrive.data, sigma)
