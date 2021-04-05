@@ -52,6 +52,7 @@ def test_repeatability_same_frame():
 
     fitter = AstigGaussGPUFitFR.FitFactory(np.atleast_3d(im), mdh)
     results = fitter.FindAndFit(1, cameraMaps=camera_info_manager)
+    I_results = np.argsort(results['fitResults']['x0'])
 
     n_simulated = len(x)
     n_detected = len(results)
@@ -65,7 +66,6 @@ def test_repeatability_same_frame():
         # peak finding inherently orders stochastically, sort results before
         # comparing them
         I_res = np.argsort(res['fitResults']['x0'])
-        I_results = np.argsort(results['fitResults']['x0'])
         np.testing.assert_array_equal(res['fitResults'][I_res], 
                                       results['fitResults'][I_results])
 
