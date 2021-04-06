@@ -186,17 +186,17 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
     float tempsum = 0;
 
     // allocated column of shared memory
-    volatile __shared__ float cdata_sh[1075][1]; //should be changed to rowsize
+    volatile __shared__ float cdata_sh[1075]; //should be changed to rowsize
     __shared__ float filter_sh[12];
 
     // pad shared mem column
     if (j < (halfFilt)){
-        cdata_sh[j][0] = 0;
-        cdata_sh[rowsize + j + halfFilt][0] = 0;
+        cdata_sh[j] = 0;
+        cdata_sh[rowsize + j + halfFilt] = 0;
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
     }
     // load data column into shared mem
-    cdata_sh[j + halfFilt][0] = data[j*colsize + cid];
+    cdata_sh[j + halfFilt] = data[j*colsize + cid];
     // load filter into shared mem
     if (j < (2*halfFilt)) filter_sh[j] = filter[j];
 
@@ -205,7 +205,7 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
 
     // perform convolution
     for (k = -halfFilt; k <= halfFiltm1; k++){
-        tempsum += cdata_sh[(j + halfFilt) - k][0]*filter_sh[k + halfFilt];
+        tempsum += cdata_sh[(j + halfFilt) - k]*filter_sh[k + halfFilt];
     }
 
     // store results in input array

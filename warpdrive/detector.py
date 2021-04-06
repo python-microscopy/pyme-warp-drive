@@ -346,10 +346,10 @@ class detector(object):
 
         # fixme - make sure units on findpeaks.cu are all set once filter.cu is consistent
         # take maximum filter
-        self.maxfrow(self.unif1_gpu, self.maxf_data_gpu, self.n_columns, self.halfMaxFilt, block=(self.ncolumns, 1, 1),
+        self.maxfrow(self.unif1_gpu, self.maxf_data_gpu, self.halfMaxFilt, block=(self.ncolumns, 1, 1),
                      grid=(self.nrows, 1), stream=self.main_stream_r)
 
-        self.maxfcol(self.maxf_data_gpu, self.n_columns, self.halfMaxFilt, block=(self.nrows, 1, 1),
+        self.maxfcol(self.maxf_data_gpu, self.halfMaxFilt, block=(self.nrows, 1, 1),
                      grid=(self.ncolumns, 1), stream=self.main_stream_r)
 
         self.find_candidates_noise_thresh(self.unif1_gpu, self.maxf_data_gpu, np.float32(thresh), self.n_candidates_gpu,
