@@ -11,6 +11,10 @@ import pycuda.tools
 import numpy as np
 from .detector_cu import *
 from . import source_prepare
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 def norm_uniform_filter(length):
     """
@@ -47,6 +51,7 @@ class detector(object):
         Initialize PyCUDA and compile CUDA functions. All CUDA functions will be run in the default context
         in several streams initialized here.
         """
+        logger.info('initializing warpdrive detector')
         self.iterations = np.int32(iterations)
         self.guess_psf_sigma = np.float32(guess_psf_sigma)
 
@@ -298,7 +303,7 @@ class detector(object):
                 # make sure the calculation is finished
                 background.sync_calculation()
             except AttributeError:
-                # background should be array, pass it to the GPU now. FIXME - make sure background is in [e-] here
+                # background should be array in [e-], pass it to the GPU now.
                 # send bkgnd via stream 1 because in current implementation, bkgnd is needed in row convolution
                 cuda.memcpy_htod_async(self.bkgnd_gpu, np.ascontiguousarray(background, dtype=np.float32),
                                        stream=self.main_stream_r)

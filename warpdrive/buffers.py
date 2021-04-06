@@ -8,6 +8,8 @@ import atexit
 import numpy as np
 from . import buffers_cu
 import logging
+logger = logging.getLogger(__name__)
+
 # It is convenient in the python-microsocpy environment (PYME) if this buffer is a subclass, but to keep things somewhat
 # independent, we can fall back to subclassing object if PYME is not available
 try:
@@ -18,16 +20,6 @@ except ImportError:
                          'not interface correctly with PYME')
 
 global COMPILED_MODULE
-
-def init_cuda():
-    global COMPILED_MODULE
-    cuda.init()
-    context = tools.make_default_context()
-    device = context.get_device()
-    atexit.register(context.pop)
-    COMPILED_MODULE = buffers_cu.percentile_buffer()
-
-logger = logging.getLogger(__name__)
 logging.debug('compiling percentile buffer module')
 COMPILED_MODULE = buffers_cu.percentile_buffer()
 
@@ -49,13 +41,7 @@ class Buffer(to_subclass):
         self.available = list(range(buffer_length))
 
         # create stream so background can be estimated asynchronously
-        try:
-            self.bg_streamer = cuda.Stream()
-        except cuda.LogicError as e:
-            # context is dead, or invalid
-            logger.exception(e)
-            logger.error('CUDA context is dead or invalid, reinitializing')
-            init_cuda()
+        self.bg_streamer = cuda.Stream()
 
         # cuda.mem_alloc expects python int; avoid potential np.int64
         self.slice_shape = [int(d) for d in self.data_buffer.dataSource.getSliceShape()]

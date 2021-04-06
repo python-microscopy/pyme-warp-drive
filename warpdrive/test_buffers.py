@@ -184,12 +184,3 @@ def test_recycling_with_overlap_after_IOError():
 
     # now test recycling
     test_recycling_with_overlap(g_buf)
-
-def test_new_context():
-    from warpdrive.buffers import init_cuda
-    buffer_length = 32
-    g_buf = simulate_IOError(buffer_length, 1.5)
-    init_cuda()
-    buffer_length = 32
-    g_buf = simulate_IOError(buffer_length, 1.5)
-    
