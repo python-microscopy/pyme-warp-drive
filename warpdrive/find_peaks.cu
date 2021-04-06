@@ -6,64 +6,85 @@ Andrew Barentine - Spring 2016
 
 #include <math.h> // for fmaxf
 
-__global__ void maxfRowGPU(float *data, float *rconvdata, const int colsize, int halfFilt)
-//
-// This function takes input data and performs a row convolution. The convolution is stored in a separate
-// output array.
-//
+__global__ void maxfRowGPU(float *data, float *rconvdata, 
+                           const int half_filter_size)
+/* 
+This function takes input data and performs a row max filter. The 
+convolution is stored in a separate output array.
+
+CUDA indexing
+-------------
+block
+    x: n_columns
+        size[1] of data
+grid
+    x: n_rows
+        size[0] of data
+
+Each row is loaded into shared memory before the convolution is performed. 
+Currently, the maximum size array that can be convolved by this function is 
+1024x1024, because each pixel is assigned its own thread.
+*/
 {
     int k;
-    int rid = blockIdx.x;// + halfFilt;
-    int j = threadIdx.x;// + halfFilt;
-    float tempmax = 0;
+    int ind = blockIdx.x * blockDim.x + threadIdx.x;
+    float temp_max = 0;
 
     volatile __shared__ float rdata_sh[1075]; //FIXME: should be changed to colsize (PADDED SIZE, or larger)
-    //__shared__ float filter_sh[12];
-    //rdata_sh[j] = data[rid*colsize + j];
-
-    //rconvdata[rid*colsize + j] = data[rid*colsize + j];
-
-    if (j <= (halfFilt)){
-        rdata_sh[j] = 0;
-        rdata_sh[colsize + j + halfFilt] = 0;
+    
+    // Pad the shared memory array
+    if (threadIdx.x < half_filter_size){
+        rdata_sh[threadIdx.x] = 0;
+        rdata_sh[blockDim.x + threadIdx.x + half_filter_size] = 0;
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
     }
-    rdata_sh[j + halfFilt + 1] = data[rid*colsize + j];
+    rdata_sh[threadIdx.x + half_filter_size] = data[ind];
 
-    __syncthreads();
+    __syncthreads();  // make sure we are ready for the row convolution
 
-    for (k = -halfFilt; k <= halfFilt; k++){
-        //tempsum += rdata_sh[(j + halfFilt) - k]*filter_sh[k + halfFilt];
-        tempmax = fmaxf(rdata_sh[(j + halfFilt + 1) - k], tempmax);
+    for (k = -half_filter_size; k <= half_filter_size - 1; k++){
+        temp_max = fmaxf(rdata_sh[(threadIdx.x + half_filter_size) - k], temp_max);
     }
-    rconvdata[rid*colsize + j] = tempmax;
+    rconvdata[ind] = temp_max;
 
 }
-__global__ void maxfColGPU(float *rconvdata, const int colsize, int halfFilt)
-//
-// This function takes input data and performs a column convolution. The convolution is stored
-// the original input array
-//
+__global__ void maxfColGPU(float *rconvdata, const int half_filter_size)
+/* 
+This function takes input data and performs a column max filter. The 
+convolution is stored in a separate output array.
+
+CUDA indexing
+-------------
+block
+    x: n_rows
+        size[0] of data
+grid
+    x: n_columns
+        size[1] of data
+
+Each column is loaded into shared memory before the convolution is performed. 
+Currently, the maximum size array that can be convolved by this function is 
+1024x1024, because each pixel is assigned its own thread.
+*/
 {
     int k;
-    int rid = blockIdx.x;// + halfFilt;
-    int j = threadIdx.x;// + halfFilt;
-    float tempmax = 0;
+    int ind = blockIdx.x + gridDim.x * threadIdx.x;
+    float temp_max = 0;
 
     volatile __shared__ float cdata_sh[1075]; //FIXME: should be changed to colsize (PADDED SIZE, or larger)
 
-    if (j <= (halfFilt)){
-        cdata_sh[j] = 0;
-        cdata_sh[colsize + j + halfFilt] = 0;
+    if (threadIdx.x < half_filter_size){
+        cdata_sh[threadIdx.x] = 0;
+        cdata_sh[blockDim.x + threadIdx.x + half_filter_size] = 0;
     }
-    cdata_sh[j + halfFilt + 1] = rconvdata[rid + colsize*j];
+    cdata_sh[threadIdx.x + half_filter_size] = rconvdata[ind];
 
     __syncthreads();
 
-    for (k = -halfFilt; k <= halfFilt; k++){
-        tempmax = fmaxf(cdata_sh[(j + halfFilt +1) - k], tempmax);
+    for (k = -half_filter_size; k <= half_filter_size - 1; k++){
+        tem_pmax = fmaxf(cdata_sh[(threadIdx.x + half_filter_size) - k], temp_max);
     }
-    rconvdata[rid + colsize*j] = tempmax;
+    rconvdata[ind] = temp_max;
 
 }
 
