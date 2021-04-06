@@ -82,7 +82,7 @@ Currently, the maximum size array that can be convolved by this function is
     __syncthreads();
 
     for (k = -half_filter_size; k <= half_filter_size - 1; k++){
-        tem_pmax = fmaxf(cdata_sh[(threadIdx.x + half_filter_size) - k], temp_max);
+        temp_max = fmaxf(cdata_sh[(threadIdx.x + half_filter_size) - k], temp_max);
     }
     rconvdata[ind] = temp_max;
 
