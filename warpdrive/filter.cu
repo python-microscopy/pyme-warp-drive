@@ -191,7 +191,7 @@ be convolved by this function is 1024x1024, because each pixel is assigned its o
 
     // pad shared mem column
     if (j < (halfFilt)){
-        cdata_sh[j][0] = 0;
+        cdata_sh[j] = 0;
         cdata_sh[rowsize + j + halfFilt] = 0;
         //printf("colsize + halfFilt %d", (colsize + halfFilt));
     }
