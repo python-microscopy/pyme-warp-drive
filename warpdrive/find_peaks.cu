@@ -161,12 +161,6 @@ int *candidate_indices, const int max_cand_count, const int half_roi_size, float
     int dloc = blockIdx.x * blockDim.x + threadIdx.x;
     int temp_ind;
 
-    // rather than pycuda memcpy a zero before calling this kernel, zero it here each time
-    if (dloc == 0){
-        *counter = 0;
-    }
-    __syncthreads();  // make sure it's zero before any threads start using it
-
     // multiply threshold factor by the noise standard deviation
     float threshold = thresh_factor * noise_sigma[dloc];
 

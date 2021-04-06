@@ -138,7 +138,7 @@ class detector(object):
         cuda.memcpy_htod(self.n_candidates_gpu, self.n_candidates)
         # allocate max assuming packing of 16 x 16 pix ROIs
         self.n_max_candidates_per_frame = np.int32(np.ceil(max(1, self.dshape[0] / 16)) * np.ceil(max(1, self.dshape[1] / 16)))
-        self.candidate_positions = np.zeros(self.n_max_candidates_per_frame, dtype=np.int32)
+        self.candidate_positions = np.ascontiguousarray(np.zeros(self.n_max_candidates_per_frame), dtype=np.int32)
         self.candidate_positions_gpu = cuda.mem_alloc(self.candidate_positions.size *
                                                       self.candidate_positions.dtype.itemsize)
         cuda.memcpy_htod(self.candidate_positions_gpu, self.candidate_positions)
@@ -154,17 +154,17 @@ class detector(object):
         self.calculate_crb = np.int32(1)
 
 
-        self.fit_res = np.zeros(6 * self.n_max_candidates_per_frame, dtype=np.float32)
+        self.fit_res = np.ascontiguousarray(np.zeros(6 * self.n_max_candidates_per_frame), dtype=np.float32)
         self.fit_res_gpu = cuda.mem_alloc(self.fit_res.size * self.fit_res.dtype.itemsize)
 
-        self.CRLB = np.zeros(6 * self.n_max_candidates_per_frame, dtype=np.float32)
+        self.CRLB = np.ascontiguousarray(np.zeros(6 * self.n_max_candidates_per_frame), dtype=np.float32)
         self.CRLB_gpu = cuda.mem_alloc(self.CRLB.size * self.CRLB.dtype.itemsize)
 
-        self.LLH = np.zeros(self.n_max_candidates_per_frame, dtype=np.float32)
+        self.LLH = np.ascontiguousarray(np.zeros(self.n_max_candidates_per_frame), dtype=np.float32)
         self.LLH_gpu = cuda.mem_alloc(self.LLH.size * self.LLH.dtype.itemsize)
 
         # for troubleshooting:
-        self.dtarget = np.zeros(self.dshape, dtype=np.float32)
+        self.dtarget = np.ascontiguousarray(np.zeros(self.dshape), dtype=np.float32)
 
     def set_filter_kernels(self, small_filter_size, large_filter_size):
         """
@@ -356,6 +356,9 @@ class detector(object):
 
         self.maxfcol(self.maxf_data_gpu, self.halfMaxFilt, block=(self.nrows, 1, 1),
                      grid=(self.ncolumns, 1), stream=self.main_stream_r)
+        
+        self.n_candidates = np.array(0, dtype=np.int32)
+        cuda.memcpy_htod_async(self.n_candidates_gpu, self.n_candidates, stream=self.main_stream_r)
 
         self.find_candidates_noise_thresh(self.unif1_gpu, self.maxf_data_gpu, np.float32(thresh), self.n_candidates_gpu,
                                           self.candidate_positions_gpu, self.n_max_candidates_per_frame,
