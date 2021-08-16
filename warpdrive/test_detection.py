@@ -26,7 +26,10 @@ except ImportError:
 
 
 def gen_image(p=.95, disp=False):
-        from PYME.Acquire.Hardware.Simulator import wormlike2
+        try:
+            from PYME.simulation import wormlike2
+        except ImportError: # legacy PYME, pre March 2021
+            from PYME.Acquire.Hardware.Simulator import wormlike2
         from scipy import ndimage
 
         wc = wormlike2.wiglyFibre(.5e3, 1e2, 1)
